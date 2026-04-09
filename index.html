@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>JobAgent — AI-powered Bewerbungsmanager</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:       #1a56db;
+      --blue-dark:  #1240a8;
+      --blue-light: #3b73f0;
+      --blue-bg:    #eef3fe;
+      --white:      #ffffff;
+      --gray:       #f4f7ff;
+      --text-muted: #a0b0d0;
+      --border:     #d0ddf7;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: var(--gray);
+      color: var(--blue-dark);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: 220px;
+      background: var(--blue-dark);
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+      flex-shrink: 0;
+    }
+
+    .sidebar-logo {
+      padding: 24px 20px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .sidebar-logo h1 {
+      color: var(--white);
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .sidebar-logo span {
+      color: var(--blue-light);
+      font-size: 11px;
+      display: block;
+      margin-top: 2px;
+      font-weight: 400;
+    }
+
+    .nav-section {
+      padding: 16px 12px 8px;
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      color: rgba(255,255,255,0.7);
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 6px;
+      margin: 2px 8px;
+      transition: background 0.15s;
+    }
+
+    .nav-item:hover, .nav-item.active {
+      background: rgba(255,255,255,0.12);
+      color: var(--white);
+    }
+
+    .nav-item.active {
+      background: var(--blue-light);
+      color: var(--white);
+    }
+
+    .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 16px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.5);
+      font-size: 12px;
+    }
+
+    /* ── MAIN ── */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .topbar {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .topbar-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--blue-dark);
+    }
+
+    .topbar-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: background 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--blue);
+      color: var(--white);
+    }
+
+    .btn-primary:hover { background: var(--blue-dark); }
+
+    .btn-outline {
+      background: var(--white);
+      color: var(--blue);
+      border: 1px solid var(--blue);
+    }
+
+    .btn-outline:hover { background: var(--blue-bg); }
+
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ── PANELS ── */
+    .panel { display: none; }
+    .panel.active { display: flex; flex-direction: column; gap: 20px; }
+
+    /* ── KPI CARDS ── */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .kpi-card {
+      background: var(--white);
+      border-radius: 10px;
+      padding: 20px;
+      border: 1px solid var(--border);
+    }
+
+    .kpi-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .kpi-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--blue);
+    }
+
+    .kpi-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* ── TABLE ── */
+    .card {
+      background: var(--white);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--blue-dark);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    thead th {
+      background: var(--blue-bg);
+      color: var(--blue-dark);
+      font-weight: 600;
+      padding: 10px 16px;
+      text-align: left;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+      cursor: pointer;
+    }
+
+    tbody tr:hover { background: var(--blue-bg); }
+    tbody tr:last-child { border-bottom: none; }
+
+    td { padding: 12px 16px; }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-green  { background: #e0f7ea; color: #1a7a40; }
+    .badge-blue   { background: #dbeafe; color: #1a40a8; }
+    .badge-orange { background: #fff3cd; color: #9a6000; }
+    .badge-red    { background: #ffe0e0; color: #a81a1a; }
+    .badge-gray   { background: #f0f0f0; color: #666; }
+
+    .match-bar-wrap { display: flex; align-items: center; gap: 8px; }
+    .match-bar {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border);
+      width: 80px;
+      overflow: hidden;
+    }
+    .match-fill { height: 100%; border-radius: 3px; background: var(--blue); }
+
+    /* ── FINDER ── */
+    .search-box {
+      background: var(--white);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      padding: 20px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .form-group { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 160px; }
+    .form-group label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+    .form-group input, .form-group select {
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--blue-dark);
+      background: var(--white);
+      outline: none;
+    }
+    .form-group input:focus, .form-group select:focus {
+      border-color: var(--blue);
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .job-card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .job-card:hover {
+      border-color: var(--blue);
+      box-shadow: 0 2px 12px rgba(26,86,219,0.1);
+    }
+
+    .job-card-title { font-size: 14px; font-weight: 600; color: var(--blue-dark); margin-bottom: 4px; }
+    .job-card-company { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+    .job-card-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .job-card-tag {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: var(--blue-bg);
+      color: var(--blue);
+    }
+    .job-card-match {
+      margin-left: auto;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--blue);
+    }
+
+    /* ── COMPANY ── */
+    .company-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .info-block {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+    }
+
+    .info-block h3 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    .info-row:last-child { border-bottom: none; }
+    .info-row-label { color: var(--text-muted); }
+    .info-row-value { font-weight: 500; }
+
+    .ai-box {
+      background: var(--blue-bg);
+      border: 1px solid var(--blue);
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--blue-dark);
+    }
+
+    .ai-box strong { display: block; margin-bottom: 6px; color: var(--blue); }
+
+    /* ── TIMELINE ── */
+    .timeline { display: flex; flex-direction: column; gap: 0; }
+    .tl-item { display: flex; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .tl-item:last-child { border-bottom: none; }
+    .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--blue); margin-top: 5px; flex-shrink: 0; }
+    .tl-dot.gray { background: var(--text-muted); }
+    .tl-body { flex: 1; }
+    .tl-title { font-size: 13px; font-weight: 500; }
+    .tl-date { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+    /* ── AGENT STATUS ── */
+    .agent-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .agent-card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+    }
+    .agent-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .agent-icon { font-size: 22px; }
+    .agent-name { font-size: 14px; font-weight: 600; }
+    .agent-status { font-size: 11px; color: var(--text-muted); }
+    .agent-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+    .agent-last { font-size: 11px; color: var(--blue); margin-top: 8px; }
+    .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #2ecc71; margin-right: 4px; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <h1>JobAgent</h1>
+    <span>AI Bewerbungsmanager</span>
+  </div>
+
+  <div class="nav-section">Navigation</div>
+  <div class="nav-item active" onclick="show('dashboard', this)">
+    <span class="nav-icon">📊</span> Dashboard
+  </div>
+  <div class="nav-item" onclick="show('finder', this)">
+    <span class="nav-icon">🔍</span> Stellenfinder
+  </div>
+  <div class="nav-item" onclick="show('pipeline', this)">
+    <span class="nav-icon">📋</span> Pipeline
+  </div>
+  <div class="nav-item" onclick="show('company', this)">
+    <span class="nav-icon">🏢</span> Unternehmensinfo
+  </div>
+  <div class="nav-item" onclick="show('agents', this)">
+    <span class="nav-icon">🤖</span> AI Agenten
+  </div>
+
+  <div class="nav-section">Profil</div>
+  <div class="nav-item" onclick="show('settings', this)">
+    <span class="nav-icon">⚙️</span> Einstellungen
+  </div>
+
+  <div class="sidebar-footer">
+    Korbinian Much<br>AI PO · Haigerloch
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title" id="page-title">Dashboard</div>
+    <div class="topbar-actions">
+      <button class="btn btn-outline">📥 Stelle einfügen</button>
+      <button class="btn btn-primary">+ Neue Bewerbung</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- DASHBOARD -->
+    <div class="panel active" id="panel-dashboard">
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-label">Aktive Bewerbungen</div>
+          <div class="kpi-value">7</div>
+          <div class="kpi-sub">+2 diese Woche</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Im Gespräch</div>
+          <div class="kpi-value">2</div>
+          <div class="kpi-sub">Hays, BARMER</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Ø Match-Score</div>
+          <div class="kpi-value">72%</div>
+          <div class="kpi-sub">Ziel: &gt; 70%</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Follow-ups fällig</div>
+          <div class="kpi-value" style="color:#e05c00">2</div>
+          <div class="kpi-sub">Paltron, Hays</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Aktuelle Pipeline</span>
+          <button class="btn btn-outline" style="font-size:12px;padding:5px 12px">Alle anzeigen</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Unternehmen</th>
+              <th>Stelle</th>
+              <th>Status</th>
+              <th>Match</th>
+              <th>Nächster Schritt</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr onclick="show('pipeline', document.querySelector('[onclick*=pipeline]'))">
+              <td><strong>Aesculap AG</strong></td>
+              <td>Senior PO klinische Software</td>
+              <td><span class="badge badge-blue">Beworben</span></td>
+              <td>
+                <div class="match-bar-wrap">
+                  <div class="match-bar"><div class="match-fill" style="width:85%"></div></div>
+                  85%
+                </div>
+              </td>
+              <td>Antwort abwarten</td>
+            </tr>
+            <tr>
+              <td><strong>BARMER</strong></td>
+              <td>Senior Feature Owner eCare & KI</td>
+              <td><span class="badge badge-blue">Beworben</span></td>
+              <td>
+                <div class="match-bar-wrap">
+                  <div class="match-bar"><div class="match-fill" style="width:70%"></div></div>
+                  70%
+                </div>
+              </td>
+              <td>Antwort abwarten</td>
+            </tr>
+            <tr>
+              <td><strong>GKK PARTNERS</strong></td>
+              <td>Head of AI</td>
+              <td><span class="badge badge-orange">⚠️ Frist 15.04.</span></td>
+              <td>
+                <div class="match-bar-wrap">
+                  <div class="match-bar"><div class="match-fill" style="width:80%"></div></div>
+                  80%
+                </div>
+              </td>
+              <td>Antwort abwarten</td>
+            </tr>
+            <tr>
+              <td><strong>Paltron</strong></td>
+              <td>Recruiter-Agentur</td>
+              <td><span class="badge badge-orange">Follow-up!</span></td>
+              <td>—</td>
+              <td>Seit 05.04. überfällig</td>
+            </tr>
+            <tr>
+              <td><strong>Hays</strong></td>
+              <td>Isabella Glässer</td>
+              <td><span class="badge badge-green">Im Gespräch</span></td>
+              <td>—</td>
+              <td>Follow-up seit 07.04.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- STELLENFINDER -->
+    <div class="panel" id="panel-finder">
+      <div class="search-box">
+        <div class="form-group">
+          <label>Jobtitel / Keywords</label>
+          <input type="text" placeholder="z.B. AI Product Owner, Head of AI…" value="AI Product Owner">
+        </div>
+        <div class="form-group">
+          <label>Region</label>
+          <select>
+            <option>Süddeutschland</option>
+            <option>Stuttgart</option>
+            <option>München</option>
+            <option>Remote</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Gehalt min.</label>
+          <select>
+            <option>85.000 €</option>
+            <option>90.000 €</option>
+            <option>95.000 €</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Quellen</label>
+          <select>
+            <option>Alle Portale</option>
+            <option>LinkedIn</option>
+            <option>Stepstone</option>
+            <option>Indeed</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" style="height:38px">🔍 Suchen</button>
+      </div>
+
+      <div class="result-grid">
+        <div class="job-card">
+          <div class="job-card-title">Head of AI Products</div>
+          <div class="job-card-company">Bosch Digital · Stuttgart</div>
+          <div class="job-card-meta">
+            <span class="job-card-tag">Remote möglich</span>
+            <span class="job-card-tag">90–115k</span>
+            <span class="job-card-match">91%</span>
+          </div>
+        </div>
+        <div class="job-card">
+          <div class="job-card-title">AI Product Manager</div>
+          <div class="job-card-company">Trumpf GmbH · Ditzingen</div>
+          <div class="job-card-meta">
+            <span class="job-card-tag">Hybrid</span>
+            <span class="job-card-tag">85–100k</span>
+            <span class="job-card-match">87%</span>
+          </div>
+        </div>
+        <div class="job-card">
+          <div class="job-card-title">LLM Product Owner</div>
+          <div class="job-card-company">MHP Consulting · Ludwigsburg</div>
+          <div class="job-card-meta">
+            <span class="job-card-tag">Homeoffice</span>
+            <span class="job-card-tag">88–105k</span>
+            <span class="job-card-match">83%</span>
+          </div>
+        </div>
+        <div class="job-card">
+          <div class="job-card-title">Senior AI Strategy Manager</div>
+          <div class="job-card-company">ZF Friedrichshafen · Friedrichshafen</div>
+          <div class="job-card-meta">
+            <span class="job-card-tag">Hybrid</span>
+            <span class="job-card-tag">90–108k</span>
+            <span class="job-card-match">79%</span>
+          </div>
+        </div>
+        <div class="job-card">
+          <div class="job-card-title">Technical Product Manager AI</div>
+          <div class="job-card-company">Datev eG · Nürnberg / Remote</div>
+          <div class="job-card-meta">
+            <span class="job-card-tag">Remote</span>
+            <span class="job-card-tag">85–98k</span>
+            <span class="job-card-match">76%</span>
+          </div>
+        </div>
+        <div class="job-card">
+          <div class="job-card-title">AI Adoption Lead</div>
+          <div class="job-card-company">Porsche AG · Stuttgart</div>
+          <div class="job-card-meta">
+            <span class="job-card-tag">Hybrid</span>
+            <span class="job-card-tag">95–120k</span>
+            <span class="job-card-match">74%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PIPELINE -->
+    <div class="panel" id="panel-pipeline">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Bewerbungs-Pipeline</span>
+          <button class="btn btn-primary" style="font-size:12px;padding:5px 12px">+ Eintrag</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Unternehmen</th>
+              <th>Rolle</th>
+              <th>Priorität</th>
+              <th>Status</th>
+              <th>Match</th>
+              <th>Gehalt</th>
+              <th>Nächster Schritt</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Aesculap AG</strong></td><td>Senior PO klinische Software</td><td>🔴 Top</td><td><span class="badge badge-blue">Beworben</span></td><td>85%</td><td>80–110k</td><td>Antwort abwarten</td></tr>
+            <tr><td><strong>BARMER</strong></td><td>Senior Feature Owner eCare & KI</td><td>🔴 Top</td><td><span class="badge badge-blue">Beworben</span></td><td>70%</td><td>80–90k</td><td>Antwort abwarten</td></tr>
+            <tr><td><strong>GKK PARTNERS</strong></td><td>Head of AI</td><td>🔴 Top</td><td><span class="badge badge-orange">Beworben ⚠️</span></td><td>—</td><td>85–95k</td><td>Frist 15.04.!</td></tr>
+            <tr><td><strong>Hays</strong></td><td>Recruiting-Partner</td><td>🟢 Pipeline</td><td><span class="badge badge-green">Im Gespräch</span></td><td>—</td><td>—</td><td>Follow-up überfällig</td></tr>
+            <tr><td><strong>Paltron</strong></td><td>Recruiting-Agentur</td><td>🔴 Top</td><td><span class="badge badge-orange">Kontaktiert</span></td><td>—</td><td>—</td><td>Follow-up überfällig</td></tr>
+            <tr><td><strong>Leadec</strong></td><td>AI Product Portfolio Owner</td><td>🔴 Top</td><td><span class="badge badge-blue">Beworben</span></td><td>—</td><td>—</td><td>Antwort abwarten</td></tr>
+            <tr><td><strong>Almato AG</strong></td><td>PO Data & Analytics</td><td>🟡 Mittel</td><td><span class="badge badge-blue">Beworben</span></td><td>55%</td><td>71–101k</td><td>Antwort abwarten</td></tr>
+            <tr><td><strong>Wolters Kluwer</strong></td><td>Senior PO ADDISON</td><td>🟡 Mittel</td><td><span class="badge badge-blue">Beworben</span></td><td>75%</td><td>65–91k</td><td>Antwort abwarten</td></tr>
+            <tr><td><strong>PRODYNA SE</strong></td><td>Senior AI Software Engineer</td><td>🔴 Top</td><td><span class="badge badge-red">Abgesagt</span></td><td>—</td><td>59–86k</td><td>—</td></tr>
+            <tr><td><strong>Wörwag Pharma</strong></td><td>AI Adoption Manager</td><td>🔴 Top</td><td><span class="badge badge-red">Abgesagt</span></td><td>78%</td><td>unbekannt</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- UNTERNEHMENSINFO -->
+    <div class="panel" id="panel-company">
+      <div class="search-box">
+        <div class="form-group" style="flex:2">
+          <label>Unternehmen recherchieren</label>
+          <input type="text" placeholder="z.B. Aesculap AG, BARMER, Bosch…" value="Aesculap AG (B. Braun)">
+        </div>
+        <button class="btn btn-primary" style="height:38px">🔎 Analysieren</button>
+      </div>
+
+      <div class="company-grid">
+        <div class="info-block">
+          <h3>Unternehmensprofil</h3>
+          <div class="info-row"><span class="info-row-label">Unternehmen</span><span class="info-row-value">Aesculap AG (B. Braun)</span></div>
+          <div class="info-row"><span class="info-row-label">Mutterkonzern</span><span class="info-row-value">B. Braun SE</span></div>
+          <div class="info-row"><span class="info-row-label">Standort</span><span class="info-row-value">Tuttlingen, BW</span></div>
+          <div class="info-row"><span class="info-row-label">Branche</span><span class="info-row-value">Medizintechnik</span></div>
+          <div class="info-row"><span class="info-row-label">Mitarbeitende</span><span class="info-row-value">~4.500</span></div>
+          <div class="info-row"><span class="info-row-label">Umsatz</span><span class="info-row-value">~1,6 Mrd. €</span></div>
+          <div class="info-row"><span class="info-row-label">Gehalt Senior PO</span><span class="info-row-value">80–110k (ERA-Tarif)</span></div>
+        </div>
+
+        <div class="info-block">
+          <h3>Kulturcheck</h3>
+          <div class="info-row"><span class="info-row-label">Kununu-Score</span><span class="info-row-value">3.8 / 5</span></div>
+          <div class="info-row"><span class="info-row-label">Empfehlungsrate</span><span class="info-row-value">72%</span></div>
+          <div class="info-row"><span class="info-row-label">Work-Life-Balance</span><span class="info-row-value">⭐⭐⭐⭐</span></div>
+          <div class="info-row"><span class="info-row-label">Homeoffice</span><span class="info-row-value">Hybrid ✓</span></div>
+          <div class="info-row"><span class="info-row-label">Führungskultur</span><span class="info-row-value">⭐⭐⭐</span></div>
+          <div class="info-row"><span class="info-row-label">Digitalisierungsgrad</span><span class="info-row-value">Mittel-Hoch</span></div>
+        </div>
+
+        <div class="info-block" style="grid-column: 1 / -1;">
+          <h3>AI-Einschätzung</h3>
+          <div class="ai-box">
+            <strong>🤖 Agent-Analyse: Fit für Korbinian Much</strong>
+            Aesculap sucht einen Senior PO für klinische Software mit Fokus auf digitale Transformation im OP-Umfeld. Der ERA-Tarifvertrag ermöglicht Gehälter bis 110k bei Senior-Einstufung. Stärken deines Profils: Agentic Engineering, nachweisbare Produktergebnisse, M.Sc. Applied AI. Schwäche: kein Medizintechnik-Background — jedoch nicht zwingend erforderlich laut Stellentext. Empfehlung: <strong>Bewerben. 85% Match.</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI AGENTEN -->
+    <div class="panel" id="panel-agents">
+      <div class="agent-grid">
+        <div class="agent-card">
+          <div class="agent-header">
+            <div class="agent-icon">🔍</div>
+            <div>
+              <div class="agent-name">Job Scout</div>
+              <div class="agent-status"><span class="pulse"></span>Aktiv</div>
+            </div>
+          </div>
+          <div class="agent-desc">Durchsucht täglich LinkedIn, Stepstone, Indeed und Unternehmensseiten nach passenden Stellen. Filtert nach Gehalt, Region und Jobtitel.</div>
+          <div class="agent-last">Letzte Suche: heute, 08:14 Uhr · 6 neue Treffer</div>
+        </div>
+
+        <div class="agent-card">
+          <div class="agent-header">
+            <div class="agent-icon">🏢</div>
+            <div>
+              <div class="agent-name">Company Researcher</div>
+              <div class="agent-status"><span class="pulse"></span>Aktiv</div>
+            </div>
+          </div>
+          <div class="agent-desc">Holt automatisch Unternehmensinfos: Kununu, LinkedIn, Glassdoor, Jahresberichte. Erstellt Kulturcheck und Gehaltsschätzung.</div>
+          <div class="agent-last">Zuletzt: BARMER · Analyse abgeschlossen</div>
+        </div>
+
+        <div class="agent-card">
+          <div class="agent-header">
+            <div class="agent-icon">📊</div>
+            <div>
+              <div class="agent-name">Match Scorer</div>
+              <div class="agent-status"><span class="pulse"></span>Aktiv</div>
+            </div>
+          </div>
+          <div class="agent-desc">Vergleicht jede Stelle mit deinem CV und Portfolio. Gibt Match-Score in % aus und erklärt Stärken und Lücken.</div>
+          <div class="agent-last">Zuletzt: BARMER 70% · Schwarz Digits 62%</div>
+        </div>
+
+        <div class="agent-card">
+          <div class="agent-header">
+            <div class="agent-icon">✉️</div>
+            <div>
+              <div class="agent-name">Message Drafter</div>
+              <div class="agent-status"><span class="pulse"></span>Aktiv</div>
+            </div>
+          </div>
+          <div class="agent-desc">Formuliert LinkedIn-Nachrichten, Follow-ups und Anschreiben. Personalisiert nach Ansprechpartner und Unternehmenskultur.</div>
+          <div class="agent-last">Zuletzt: Follow-up Hays · Entwurf bereit</div>
+        </div>
+
+        <div class="agent-card">
+          <div class="agent-header">
+            <div class="agent-icon">📋</div>
+            <div>
+              <div class="agent-name">Tracker Sync</div>
+              <div class="agent-status"><span class="pulse"></span>Aktiv</div>
+            </div>
+          </div>
+          <div class="agent-desc">Hält Pipeline, READMEs und Tracker automatisch aktuell. Erinnert an Follow-up-Fristen und offene Aktionen.</div>
+          <div class="agent-last">Heute: 2 Follow-ups überfällig (Paltron, Hays)</div>
+        </div>
+
+        <div class="agent-card">
+          <div class="agent-header">
+            <div class="agent-icon">🗂️</div>
+            <div>
+              <div class="agent-name">Form Filler</div>
+              <div class="agent-status" style="color:var(--text-muted)">In Entwicklung</div>
+            </div>
+          </div>
+          <div class="agent-desc">Füllt Bewerbungsformulare automatisch aus — Rollenbeschreibung, Gehaltswunsch, Fragen. Nutzt CV + Portfolio als Wissensbasis.</div>
+          <div class="agent-last" style="color:var(--text-muted)">Noch nicht verfügbar</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Agenten-Log (heute)</span></div>
+        <div style="padding:16px">
+          <div class="timeline">
+            <div class="tl-item"><div class="tl-dot"></div><div class="tl-body"><div class="tl-title">Job Scout: 6 neue Stellen gefunden — 2 über 80% Match</div><div class="tl-date">09.04.2026 · 08:14</div></div></div>
+            <div class="tl-item"><div class="tl-dot"></div><div class="tl-body"><div class="tl-title">Tracker Sync: PRODYNA auf Abgeschlossen gesetzt (Absage)</div><div class="tl-date">09.04.2026 · 09:32</div></div></div>
+            <div class="tl-item"><div class="tl-dot"></div><div class="tl-body"><div class="tl-title">Company Researcher: BARMER-Analyse abgeschlossen · Tarifvertrag-Flag gesetzt</div><div class="tl-date">09.04.2026 · 11:05</div></div></div>
+            <div class="tl-item"><div class="tl-dot"></div><div class="tl-body"><div class="tl-title">Match Scorer: Wörwag Pharma 78% · BARMER 70% · Schwarz Digits 62%</div><div class="tl-date">09.04.2026 · 13:20</div></div></div>
+            <div class="tl-item"><div class="tl-dot gray"></div><div class="tl-body"><div class="tl-title">Tracker Sync: Wörwag Pharma auf Abgeschlossen · BARMER auf Beworben</div><div class="tl-date">09.04.2026 · 15:47</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS (placeholder) -->
+    <div class="panel" id="panel-settings">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Profil & Einstellungen</span></div>
+        <div style="padding:24px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
+          <div class="form-group"><label>Name</label><input value="Korbinian Much"></div>
+          <div class="form-group"><label>E-Mail</label><input value="korbinian.much@gmail.com"></div>
+          <div class="form-group"><label>Zielgehalt min.</label><input value="85.000 €"></div>
+          <div class="form-group"><label>Zielgehalt Einstieg</label><input value="90.000 €"></div>
+          <div class="form-group"><label>Zielregion</label><input value="Süddeutschland, Remote"></div>
+          <div class="form-group"><label>Zielrollen</label><input value="AI PO, Head of AI, LLM PM"></div>
+          <div class="form-group" style="grid-column:1/-1"><label>Kündigungsfrist</label><input value="4 Wochen"></div>
+          <div style="grid-column:1/-1"><button class="btn btn-primary">Speichern</button></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  function show(id, el) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('panel-' + id).classList.add('active');
+    if (el) el.classList.add('active');
+    const titles = {
+      dashboard: 'Dashboard',
+      finder: 'Stellenfinder',
+      pipeline: 'Bewerbungs-Pipeline',
+      company: 'Unternehmensinfo',
+      agents: 'AI Agenten',
+      settings: 'Einstellungen'
+    };
+    document.getElementById('page-title').textContent = titles[id] || id;
+  }
+</script>
+</body>
+</html>
