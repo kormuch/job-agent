@@ -6,6 +6,9 @@ import JobFinder from "./components/JobFinder";
 import CompanyInfo from "./components/CompanyInfo";
 import AnnotationLayer from "./components/AnnotationLayer";
 import Tutorial from "./components/Tutorial";
+import NewApplicationModal from "./components/NewApplicationModal";
+import Settings from "./components/Settings";
+import AiAgents from "./components/AiAgents";
 
 const NAV = [
   { id: "dashboard", icon: "📊", label: "Dashboard",       tour: "nav-dashboard" },
@@ -37,8 +40,10 @@ function Placeholder({ title }: { title: string }) {
 }
 
 export default function App() {
-  const [page, setPage]         = useState("dashboard");
+  const [page, setPage]             = useState("dashboard");
   const [showTutorial, setShowTutorial] = useState(false);
+  const [showNewApp, setShowNewApp]  = useState(false);
+  const [refreshKey, setRefreshKey]  = useState(0);
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
@@ -81,23 +86,33 @@ export default function App() {
             >
               ? Tour
             </button>
-            <button className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+            <button
+              onClick={() => setShowNewApp(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+            >
               + Neue Bewerbung
             </button>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-6">
-          {page === "dashboard" && <Dashboard onNavigate={setPage} />}
-          {page === "pipeline"  && <Pipeline />}
+          {page === "dashboard" && <Dashboard key={refreshKey} onNavigate={setPage} />}
+          {page === "pipeline"  && <Pipeline key={refreshKey} />}
           {page === "feedback"  && <Feedback />}
           {page === "finder"    && <JobFinder />}
           {page === "company"   && <CompanyInfo />}
-          {page === "agents"    && <Placeholder title="AI Agenten" />}
-          {page === "settings"  && <Placeholder title="Einstellungen" />}
+          {page === "agents"    && <AiAgents />}
+          {page === "settings"  && <Settings />}
         </main>
       </div>
 
       <AnnotationLayer />
+
+      {showNewApp && (
+        <NewApplicationModal
+          onClose={() => setShowNewApp(false)}
+          onCreated={() => { setRefreshKey(k => k + 1); setPage("pipeline"); }}
+        />
+      )}
 
       {showTutorial && (
         <Tutorial

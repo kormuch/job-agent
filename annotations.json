@@ -1,16 +1,1 @@
-[
-  {
-    "selector": "thead > tr.bg-blue-50.text-blue-800 > th.text-left.px-4:nth-of-type(1)",
-    "tagName": "th",
-    "text": "Unternehmen",
-    "comment": "alphanumerische sortierung jedes eintrags pro klick. und zwar unternhemen, stelle, status, match follow up. alles sortierbar machen",
-    "timestamp": "2026-04-09T14:22:20.821Z"
-  },
-  {
-    "selector": "tbody.select-text > tr.border-b.border-blue-50:nth-of-type(1) > td.px-4.py-3:nth-of-type(3)",
-    "tagName": "td",
-    "text": "🔴 Top",
-    "comment": "ampelsystem von grün top bis gelb mittel bis grau schwach",
-    "timestamp": "2026-04-09T14:50:42.465Z"
-  }
-]
+[]

@@ -14,11 +14,17 @@ class Company(Base):
     revenue       = Column(String(50))
     kununu_score  = Column(Numeric(2, 1))
     remote_policy = Column(String(50))
-    tariff        = Column(Boolean, default=False)
-    notes         = Column(Text)
-    created_at    = Column(DateTime, server_default=func.now())
-    jobs          = relationship("Job", back_populates="company")
-    contacts      = relationship("Contact", back_populates="company")
+    tariff              = Column(Boolean, default=False)
+    notes               = Column(Text)
+    logo_url            = Column(Text)
+    description         = Column(Text)
+    culture_text        = Column(Text)
+    ceo_name            = Column(String(255))
+    research_fetched_at = Column(String(32))
+    kununu_fetched_at   = Column(String(32))
+    created_at          = Column(DateTime, server_default=func.now())
+    jobs                = relationship("Job", back_populates="company")
+    contacts            = relationship("Contact", back_populates="company")
 
 class Job(Base):
     __tablename__ = "jobs"

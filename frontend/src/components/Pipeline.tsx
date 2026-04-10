@@ -9,11 +9,12 @@ const STATUS_COLORS: Record<string, string> = {
   im_gespräch:    "bg-green-100 text-green-700",
   interview:      "bg-purple-100 text-purple-700",
   angebot:        "bg-yellow-100 text-yellow-700",
-  abgeschlossen:  "bg-red-100 text-red-600",
+  abgeschlossen:  "bg-green-100 text-green-700",
+  absage:         "bg-red-100 text-red-600",
   ghosted:        "bg-gray-200 text-gray-500",
 };
 
-const STATUSES = ["offen","kontaktiert","beworben","im_gespräch","interview","angebot","abgeschlossen","ghosted"];
+const STATUSES = ["offen","kontaktiert","beworben","im_gespräch","interview","angebot","abgeschlossen","absage","ghosted"];
 
 const PRIORITY_ORDER: Record<string, number> = { top: 0, mittel: 1, pipeline: 2 };
 
@@ -61,12 +62,59 @@ function SortTh({ label, col, sortKey, sortDir, onSort }: {
   );
 }
 
+const API = "http://localhost:8002";
+
+interface MatchResult {
+  score: number;
+  strengths: string[];
+  gaps: string[];
+  summary: string;
+}
+
+function MatchDetail({ result, onClose }: { result: MatchResult; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <span className={`text-3xl font-bold ${result.score >= 70 ? "text-green-600" : result.score >= 50 ? "text-yellow-500" : "text-red-500"}`}>
+              {result.score}
+            </span>
+            <span className="text-blue-400 text-sm">/ 100</span>
+          </div>
+          <button onClick={onClose} className="text-blue-300 hover:text-blue-600 text-xl">×</button>
+        </div>
+        <p className="text-sm text-blue-800 mb-4 leading-relaxed">{result.summary}</p>
+        {result.strengths.length > 0 && (
+          <div className="mb-3">
+            <div className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1">Stärken</div>
+            <ul className="text-sm text-blue-800 space-y-1">
+              {result.strengths.map((s, i) => <li key={i} className="flex gap-2"><span className="text-green-500">✓</span>{s}</li>)}
+            </ul>
+          </div>
+        )}
+        {result.gaps.length > 0 && (
+          <div>
+            <div className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-1">Lücken</div>
+            <ul className="text-sm text-blue-800 space-y-1">
+              {result.gaps.map((g, i) => <li key={i} className="flex gap-2"><span className="text-red-400">○</span>{g}</li>)}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Pipeline() {
   const [apps, setApps] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("company");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [scoring, setScoring] = useState<number | null>(null);
+  const [matchDetail, setMatchDetail] = useState<MatchResult | null>(null);
 
   useEffect(() => {
     fetchApplications()
@@ -85,6 +133,26 @@ export default function Pipeline() {
     setApps(apps.map(a => a.id === id ? { ...a, status } : a));
   }
 
+  async function handleScore(jobId: number) {
+    setScoring(jobId);
+    try {
+      const res = await fetch(`${API}/match/${jobId}`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.detail || "Score fehlgeschlagen");
+        return;
+      }
+      const result: MatchResult = await res.json();
+      // Update score in app list
+      setApps(prev => prev.map(a =>
+        a.job?.id === jobId ? { ...a, job: { ...a.job!, match_score: result.score } } : a
+      ));
+      setMatchDetail(result);
+    } finally {
+      setScoring(null);
+    }
+  }
+
   if (loading) return <div className="p-8 text-blue-600">Lade Pipeline...</div>;
   if (error)   return <div className="p-8 text-red-500">{error}</div>;
 
@@ -92,7 +160,7 @@ export default function Pipeline() {
   const th = { sortKey, sortDir, onSort: handleSort };
 
   return (
-    <div className="bg-white rounded-xl border border-blue-100 overflow-hidden" data-tour="pipeline-table">
+    <><div className="bg-white rounded-xl border border-blue-100 overflow-hidden" data-tour="pipeline-table">
       <div className="px-6 py-4 border-b border-blue-100 flex items-center justify-between">
         <h2 className="text-base font-semibold text-blue-900">Bewerbungs-Pipeline</h2>
         <span className="text-sm text-blue-400">{apps.length} Einträge</span>
@@ -123,8 +191,8 @@ export default function Pipeline() {
                 <td className="px-4 py-3 text-blue-800">{a.job?.title ?? "—"}</td>
                 <td className="px-4 py-3">
                   <span className="text-sm">{
-                    a.priority === "top" ? "🔴 Top" :
-                    a.priority === "mittel" ? "🟡 Mittel" : "🟢 Pipeline"
+                    a.priority === "top" ? "🟢 Top" :
+                    a.priority === "mittel" ? "🟡 Mittel" : "⚫ Pipeline"
                   }</span>
                 </td>
                 <td className="px-4 py-3">
@@ -138,7 +206,21 @@ export default function Pipeline() {
                     ))}
                   </select>
                 </td>
-                <td className="px-4 py-3"><MatchBadge score={a.job?.match_score} /></td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <MatchBadge score={a.job?.match_score} />
+                    {a.job?.id && (
+                      <button
+                        onClick={() => handleScore(a.job!.id)}
+                        disabled={scoring === a.job.id}
+                        title="Match berechnen"
+                        className="text-xs text-blue-300 hover:text-blue-600 transition-colors disabled:opacity-40"
+                      >
+                        {scoring === a.job.id ? "⟳" : "⚡"}
+                      </button>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-3 text-blue-700">
                   {a.job?.salary_min && a.job?.salary_max
                     ? `${(a.job.salary_min/1000).toFixed(0)}–${(a.job.salary_max/1000).toFixed(0)}k`
@@ -152,5 +234,10 @@ export default function Pipeline() {
         </table>
       </div>
     </div>
+
+    {matchDetail && (
+      <MatchDetail result={matchDetail} onClose={() => setMatchDetail(null)} />
+    )}
+    </>
   );
 }

@@ -10,6 +10,7 @@ export interface ApplicationJob {
     id: number;
     name: string;
     location: string | null;
+    website: string | null;
   };
 }
 

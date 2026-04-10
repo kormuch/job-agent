@@ -2,6 +2,11 @@
 db_credentials.txt
 .env
 
+# Persönliche Daten
+*.pdf
+db/cv.md
+db/config.json
+
 # Python
 __pycache__/
 *.pyc

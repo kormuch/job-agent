@@ -143,6 +143,81 @@ async def import_job(req: ImportRequest, db: Session = Depends(get_db)):
     }
 
 
+class SearchRequest(BaseModel):
+    query: str          # z.B. "AI Product Owner Stuttgart"
+    max_results: int = 10
+
+
+@router.post("/search")
+async def search_jobs(req: SearchRequest):
+    """
+    Sucht via DuckDuckGo nach Stellenanzeigen.
+    Gibt URLs + Titel zurück — kein Import, nur Vorschau.
+    """
+    import asyncio
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "de-DE,de;q=0.9",
+    }
+
+    # DuckDuckGo HTML-Suche (kein API-Key nötig)
+    search_url = "https://html.duckduckgo.com/html/"
+    params = {"q": req.query + " Stellenanzeige", "kl": "de-de"}
+
+    results = []
+    try:
+        await asyncio.sleep(1)
+        async with httpx.AsyncClient(headers=headers, timeout=15, follow_redirects=True) as client:
+            r = await client.post(search_url, data=params)
+            html = r.text
+
+        # Links aus DuckDuckGo-Ergebnis extrahieren
+        # DDG wraps links in //duckduckgo.com/l/?uddg=<encoded_url>
+        encoded_urls = re.findall(r'uddg=(https?[^&"]+)', html)
+        seen = set()
+        job_domains = ["stepstone", "linkedin", "indeed", "xing", "monster",
+                       "jobware", "jobs.de", "karriere", "stellenanzeigen"]
+
+        for enc in encoded_urls:
+            try:
+                from urllib.parse import unquote
+                url = unquote(enc)
+            except Exception:
+                url = enc
+
+            if url in seen:
+                continue
+            seen.add(url)
+
+            # Titel aus DDG-Ergebnis holen
+            # Suche nach dem Anchor-Text nahe dieser URL
+            title_m = re.search(
+                rf'{re.escape(enc[:40])}[^"]*"[^>]*>\s*<[^>]+>([^<]{{5,120}})',
+                html
+            )
+            title = title_m.group(1).strip() if title_m else url
+
+            source = "Web"
+            for d in ["stepstone", "linkedin", "indeed", "xing", "jobs.de"]:
+                if d in url:
+                    source = d.capitalize()
+                    break
+
+            # Nur relevante Job-Seiten
+            if any(d in url.lower() for d in job_domains) or "job" in url.lower() or "stell" in url.lower():
+                results.append({"url": url, "title": title, "source": source})
+
+            if len(results) >= req.max_results:
+                break
+
+    except Exception as e:
+        return {"results": [], "error": str(e)}
+
+    return {"results": results}
+
+
 @router.get("/jobs")
 def list_imported_jobs(db: Session = Depends(get_db)):
     """Alle importierten Stellen (noch nicht als Bewerbung angelegt)."""

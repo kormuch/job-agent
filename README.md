@@ -11,7 +11,7 @@ Tool das automatisch Stellen findet, Unternehmensauskünfte einholt, Bewerbungen
 | Frontend | React + TypeScript + Tailwind CSS v4 + Vite |
 | Backend | Python 3.12 + FastAPI + SQLAlchemy |
 | Datenbank | SQLite (`db/jobagent.db`) |
-| KI | Gemini Free Tier oder Groq Free Tier — geplant |
+| KI | **Groq** (primär) + Gemini (Fallback) — aktiv |
 | Scraping | Playwright + httpx (lokal, €0) |
 | Job-Import | URL-basiert (Stepstone, LinkedIn, Indeed, Direktseiten) |
 | Unternehmensdaten | Firmenwebsite (Playwright) + Google News RSS + Kununu |
@@ -149,32 +149,94 @@ Scrapt automatisch `/team`, `/kontakt`, `/about`, `/impressum` der Firmenwebsite
 
 ---
 
-## Features (Stand: 09.04.2026)
+## KI-System (Stand: 10.04.2026)
+
+### Welche Modelle werden verwendet?
+
+| Provider | Modell | Kosten | Limit | Status |
+|---|---|---|---|---|
+| **Groq** | `llama-3.3-70b-versatile` | €0 | 14.400 req/Tag, 30/min | **Aktiv (primär)** |
+| Gemini | `gemini-1.5-flash` | €0 (Billing nötig) | 1.500 req/Tag | Fallback |
+
+Groq hat Vorrang. Wenn kein Groq-Key vorhanden, wird Gemini verwendet.
+Keys in `.env` (nie ins Git committen — steht in `.gitignore`):
+```
+GROQ_API_KEY=gsk_...
+GEMINI_API_KEY=AIza...
+```
+
+### Wie funktionieren die KI-Aufrufe?
+
+Jeder LLM-Call ist so aufgebaut:
+
+```
+[System-Prompt / Persona]     ← deine dauerhafte Anweisung (editierbar in UI)
+     +
+[CV]                          ← gespeichert in db/cv.md
+     +
+<job_description>             ← externe Inhalte immer in XML-Tags (Injection-Schutz)
+  Stellenbeschreibung
+</job_description>
+```
+
+Der **System-Prompt** ist deine persönliche Anweisung an die KI — einmalig hinterlegen,
+wirkt bei jedem Call automatisch mit. Beispiel:
+> "Ich bin AI Product Owner mit Fokus auf Agentic Engineering. Gehaltsvorstellung 80–95k.
+> Bevorzuge remote-freundliche Startups/Mittelstand. Konzerne nur wenn explizit innovativ.
+> Bewerte Stellenbeschreibungen kritisch — lieber einen niedrigeren Score als falsche Hoffnung."
+
+### KI-Funktionen
+
+| Funktion | Endpoint | Beschreibung |
+|---|---|---|
+| Match Score | `POST /match/{job_id}` | CV + Stelle → Score 0–100 + Stärken/Lücken |
+| Ad-hoc Score | `POST /match/text/score` | Score ohne DB-Job (Text direkt) |
+| Message Drafter | `POST /draft/{job_id}` | Anschreiben / LinkedIn-Nachricht generieren *(geplant)* |
+| CV speichern | `POST /match/cv` | CV-Text in db/cv.md ablegen |
+| Config | `GET/POST /match/config` | Key-Status + System-Prompt |
+
+### Prompt Injection — Schutz
+
+> **Risiko:** Mittel. Stellenanzeigen können versteckte Anweisungen enthalten.
+> Bereits implementiert: XML-Tag-Kapselung, Längenbegrenzung (4000/3000 Zeichen).
+
+- [x] Externe Inhalte in XML-Tags gekapselt (`<cv>`, `<job_description>`)
+- [x] Längenbegrenzung: CV max. 4000, Stelle max. 3000 Zeichen
+- [ ] Suspicious-Pattern-Logging (`ignore`, `system prompt`, `vergiss`)
+- [ ] Output-Validierung: Score muss Integer 0–100 sein
+- [ ] LLM-Audit-Log in DB
+
+---
+
+## Features (Stand: 10.04.2026)
 
 ### Fertig
 - [x] Dashboard mit KPI-Cards (live aus DB: aktive Bewerbungen, Im Gespräch, Ø Match-Score, Follow-ups)
-- [x] Pipeline-Tabelle — alle 8 Spalten sortierbar, Zellen kopierbar
-- [x] Ampel-System für Match-Score (grün ≥70%, gelb 50–69%, rot <50%, weiß = kein Score)
-- [x] Status-Dropdown direkt in der Tabelle (live PATCH)
-- [x] Navigation mit 7 Seiten
+- [x] Pipeline-Tabelle — alle Spalten sortierbar, Zellen kopierbar
+- [x] Priorität-Ampel: 🟢 Top / 🟡 Mittel / ⚫ Pipeline
+- [x] Match-Score-Ampel: grün ≥70%, gelb 50–69%, rot <50%, weiß = kein Score
+- [x] Status-Dropdown direkt in der Tabelle (live PATCH), inkl. "absage"
+- [x] "Neue Bewerbung" Modal — Firma+Job+Application in einem Schritt
+- [x] Website-URL pro Unternehmen editierbar (inline, startet Recherche neu)
 - [x] Annotation-System: Stift-Button → Element anklicken → Kommentar speichern
-- [x] Feedback-Seite mit "Umgesetzt"-Button (löscht Eintrag)
+- [x] Feedback-Seite mit "Umgesetzt"-Button
 - [x] Job-Import per URL (`/scout/import`)
-- [x] Company Researcher: Website-Scraper + Google News RSS + Kununu
-- [x] SQLite statt PostgreSQL (kein laufender DB-Server nötig)
+- [x] Company Researcher: Website-Scraper + Kununu (7-Tage-Cache)
+- [x] Match Scorer: CV (db/cv.md) + Stelle → Score + Stärken/Lücken via Groq/Gemini
+- [x] ⚡-Button in Pipeline: Score direkt berechnen + Popup
+- [x] Einstellungen-Seite: CV-Editor + API-Key-Verwaltung
+- [x] SQLite (kein laufender DB-Server nötig)
 
 ### In Arbeit / Nächste Schritte
-- [ ] Frontend: Stellenfinder-Seite (URL eingeben → importieren → zur Pipeline hinzufügen)
-- [ ] Frontend: Unternehmensinfo-Seite (Research-Ergebnisse anzeigen)
-- [ ] "Neue Bewerbung" Modal/Formular
-- [ ] Match Scorer: CV-Markdown + Stelle → Score + Begründung (Gemini/Groq Free Tier)
-- [ ] Kontakte in Unternehmensansicht anzeigen und bearbeiten
+- [ ] System-Prompt / Persona in UI editierbar (AI Agenten-Seite)
+- [ ] Message Drafter: Anschreiben + LinkedIn-Nachricht generieren
+- [ ] Nacht-Scheduler: automatische Job-Suche via DuckDuckGo + Score
+- [ ] Kontakte in Unternehmensansicht bearbeiten
 
 ### Geplant (Phase 3)
-- [ ] Message Drafter: Anschreiben, LinkedIn-Nachricht, Follow-up-Text generieren
-- [ ] Täglicher Job-Scout (Scheduler, automatisch)
-- [ ] Tracker Sync: Bewerbungsstatus als Markdown exportieren
 - [ ] Follow-up Reminder (Frist überschritten → Hinweis im Dashboard)
+- [ ] Tracker Sync: Bewerbungsstatus als Markdown exportieren
+- [ ] Täglicher Job-Scout (Windows Task Scheduler)
 
 ### Geplant (Phase 4 — Polish)
 - [ ] Form Filler (Playwright-Automation für Bewerbungsportale)
@@ -187,8 +249,8 @@ Scrapt automatisch `/team`, `/kontakt`, `/about`, `/impressum` der Firmenwebsite
 
 | Problem | Ursache | Workaround |
 |---|---|---|
-| Automatische Job-Suche nicht möglich | Stepstone/Indeed/BA-API blocken server-seitige Requests | Manueller URL-Import |
-| KI-Funktionen noch nicht aktiv | Claude API kostet Geld, Gemini/Groq-Key fehlt noch | Gemini Free Tier einrichten (1500 req/Tag gratis) |
+| Automatische Job-Suche teilweise geblockt | Stepstone/Indeed blocken Bots | DuckDuckGo-Suche + langsame Requests |
+| Gemini 429-Fehler | Billing nicht aktiviert im Google-Account | Groq als primären Provider nutzen |
 | Port 8000 manchmal belegt | Windows TIME_WAIT nach mehrfachem Neustart | Port 8002 verwenden |
 
 ---
