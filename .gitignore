@@ -2,10 +2,13 @@
 db_credentials.txt
 .env
 
-# Persönliche Daten
+# Persönliche Daten & Secrets
 *.pdf
 db/cv.md
 db/config.json
+db/jobagent.db
+db/*.db
+annotations.json
 
 # Python
 __pycache__/
