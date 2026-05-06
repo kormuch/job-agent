@@ -46,6 +46,8 @@ def get_applications(db: Session = Depends(get_db)):
                 "match_score": a.job.match_score,
                 "salary_min": a.job.salary_min,
                 "salary_max": a.job.salary_max,
+                "source_url": a.job.source_url,
+                "description": a.job.description or "",
                 "company": {
                     "id": a.job.company.id,
                     "name": a.job.company.name,
@@ -97,6 +99,30 @@ def create_application(req: NewApplicationRequest, db: Session = Depends(get_db)
         salary_target=req.salary_target,
         applied_at=applied,
         notes=req.notes or "",
+    )
+    db.add(application)
+    db.commit()
+    db.refresh(application)
+    return {"id": application.id, "status": application.status}
+
+
+class AddToPipelineRequest(BaseModel):
+    job_id: int
+    priority: str = "mittel"
+
+@router.post("/from-job")
+def create_application_from_job(req: AddToPipelineRequest, db: Session = Depends(get_db)):
+    """Erstellt eine Application aus einem bereits importierten Job."""
+    job = db.query(Job).filter(Job.id == req.job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job nicht gefunden")
+    existing = db.query(Application).filter(Application.job_id == req.job_id).first()
+    if existing:
+        return {"id": existing.id, "status": existing.status, "already_exists": True}
+    application = Application(
+        job_id=job.id,
+        status="offen",
+        priority=req.priority,
     )
     db.add(application)
     db.commit()

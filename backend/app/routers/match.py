@@ -116,7 +116,9 @@ def _build_prompt(cv_text: str, job_text: str) -> str:
     return f"""Du bist ein neutraler Karriere-Assistent. Bewerte wie gut der Kandidat zur Stelle passt.{persona_block}
 
 Antworte NUR mit gültigem JSON (kein Markdown, keine Erklärung davor/danach):
-{{"score": <0-100>, "strengths": ["...", "..."], "gaps": ["...", "..."], "summary": "..."}}
+{{"score": <0-100>, "strengths": ["...", "..."], "gaps": ["...", "..."], "summary": "...", "salary_min": <Jahresgehalt-Untergrenze in EUR oder null>, "salary_max": <Jahresgehalt-Obergrenze in EUR oder null>}}
+
+Gehaltsschätzung: Leite aus Jobtitel, Seniorität, Branche, Standort und Anforderungen eine realistische Brutto-Jahresgehaltsspanne (Min/Max) in EUR ab. Falls die Stelle ein Gehalt nennt, übernimm es. Falls nicht ableitbar, setze null.
 
 Bewertungsskala:
 80-100 = Sehr guter Match, fast alle Anforderungen erfüllt
@@ -143,11 +145,15 @@ def _parse_score_response(text: str) -> dict:
     score = int(data.get("score", 0))
     if not 0 <= score <= 100:
         raise ValueError("Score außerhalb 0-100")
+    salary_min = data.get("salary_min")
+    salary_max = data.get("salary_max")
     return {
-        "score":     score,
-        "strengths": data.get("strengths", [])[:5],
-        "gaps":      data.get("gaps", [])[:5],
-        "summary":   str(data.get("summary", ""))[:500],
+        "score":      score,
+        "strengths":  data.get("strengths", [])[:5],
+        "gaps":       data.get("gaps", [])[:5],
+        "summary":    str(data.get("summary", ""))[:500],
+        "salary_min": int(salary_min) if salary_min is not None else None,
+        "salary_max": int(salary_max) if salary_max is not None else None,
     }
 
 

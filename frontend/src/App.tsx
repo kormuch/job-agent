@@ -3,29 +3,26 @@ import Pipeline from "./components/Pipeline";
 import Dashboard from "./components/Dashboard";
 import Feedback from "./components/Feedback";
 import JobFinder from "./components/JobFinder";
-import CompanyInfo from "./components/CompanyInfo";
 import AnnotationLayer from "./components/AnnotationLayer";
 import Tutorial from "./components/Tutorial";
 import NewApplicationModal from "./components/NewApplicationModal";
 import Settings from "./components/Settings";
-import AiAgents from "./components/AiAgents";
+import CandidateProfile from "./components/CandidateProfile";
 
 const NAV = [
-  { id: "dashboard", icon: "📊", label: "Dashboard",       tour: "nav-dashboard" },
-  { id: "pipeline",  icon: "📋", label: "Pipeline",        tour: "nav-pipeline" },
-  { id: "finder",    icon: "🔍", label: "Stellenfinder",   tour: "nav-finder" },
-  { id: "company",   icon: "🏢", label: "Unternehmensinfo",tour: "nav-company" },
-  { id: "agents",    icon: "🤖", label: "AI Agenten",      tour: "" },
-  { id: "settings",  icon: "⚙️", label: "Einstellungen",   tour: "" },
-  { id: "feedback",  icon: "💬", label: "Feedback",        tour: "nav-feedback" },
+  { id: "dashboard", icon: "📊", label: "Dashboard",         tour: "nav-dashboard" },
+  { id: "pipeline",  icon: "📋", label: "Pipeline",          tour: "nav-pipeline" },
+  { id: "finder",    icon: "🔍", label: "Stellenfinder",     tour: "nav-finder" },
+  { id: "profile",   icon: "👤", label: "Kandidaten-Profil", tour: "" },
+  { id: "settings",  icon: "⚙️", label: "Einstellungen",     tour: "" },
+  { id: "feedback",  icon: "💬", label: "Feedback",          tour: "nav-feedback" },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
   dashboard: "Dashboard",
   pipeline:  "Pipeline",
   finder:    "Stellenfinder",
-  company:   "Unternehmensinfo",
-  agents:    "AI Agenten",
+  profile:   "Kandidaten-Profil",
   settings:  "Einstellungen",
   feedback:  "Feedback",
 };
@@ -44,6 +41,7 @@ export default function App() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [showNewApp, setShowNewApp]  = useState(false);
   const [refreshKey, setRefreshKey]  = useState(0);
+  const [annotating, setAnnotating] = useState(false);
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
@@ -70,6 +68,7 @@ export default function App() {
             </div>
           ))}
         </nav>
+        <div className="pb-2 h-10" />{/* Platzhalter für fixed button */}
         <div className="px-4 py-4 border-t border-blue-800 text-blue-400 text-xs">
           Korbinian Much<br />AI PO · Haigerloch
         </div>
@@ -98,14 +97,28 @@ export default function App() {
           {page === "dashboard" && <Dashboard key={refreshKey} onNavigate={setPage} />}
           {page === "pipeline"  && <Pipeline key={refreshKey} />}
           {page === "feedback"  && <Feedback />}
-          {page === "finder"    && <JobFinder />}
-          {page === "company"   && <CompanyInfo />}
-          {page === "agents"    && <AiAgents />}
+          {page === "finder"    && <JobFinder onNavigate={setPage} />}
+          {page === "profile"   && <CandidateProfile />}
           {page === "settings"  && <Settings />}
         </main>
       </div>
 
-      <AnnotationLayer />
+      {/* Feedback-Button — immer über allen Modals */}
+      <div className="fixed bottom-16 left-0 w-52 px-3 z-[60]">
+        <button
+          data-tour="annotation-btn"
+          onClick={() => setAnnotating(a => !a)}
+          className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+            ${annotating
+              ? "bg-blue-500 text-white"
+              : "text-blue-300 hover:bg-blue-800 hover:text-white"}`}
+        >
+          <span>✏️</span>
+          <span>{annotating ? "Annotieren aktiv" : "Feedback geben"}</span>
+        </button>
+      </div>
+
+      <AnnotationLayer active={annotating} onToggle={() => setAnnotating(a => !a)} />
 
       {showNewApp && (
         <NewApplicationModal

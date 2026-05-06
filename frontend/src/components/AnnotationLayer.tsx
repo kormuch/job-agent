@@ -42,8 +42,7 @@ function getSelector(el: Element): string {
   return parts.slice(-3).join(" > ");
 }
 
-export default function AnnotationLayer() {
-  const [active, setActive] = useState(false);
+export default function AnnotationLayer({ active, onToggle }: { active: boolean; onToggle: () => void }) {
   const [popup, setPopup] = useState<Popup | null>(null);
   const [comment, setComment] = useState("");
   const [saved, setSaved] = useState(false);
@@ -77,17 +76,36 @@ export default function AnnotationLayer() {
       setComment("");
     };
 
+    const onContextMenu = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("#annotation-ui")) {
+        e.preventDefault();
+      }
+      onToggle();
+      setPopup(null);
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onToggle();
+        setPopup(null);
+      }
+    };
+
     document.addEventListener("mousemove", onMove);
     document.addEventListener("click", onClick, true);
+    document.addEventListener("contextmenu", onContextMenu, true);
+    document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("click", onClick, true);
+      document.removeEventListener("contextmenu", onContextMenu, true);
+      document.removeEventListener("keydown", onKeyDown);
       if (highlightRef.current) {
         highlightRef.current.style.outline = "";
         highlightRef.current.style.cursor = "";
       }
     };
-  }, [active]);
+  }, [active, onToggle]);
 
   async function saveAnnotation() {
     if (!popup || !comment.trim()) return;
@@ -112,18 +130,6 @@ export default function AnnotationLayer() {
 
   return (
     <div id="annotation-ui">
-      {/* Toggle Button */}
-      <button
-        data-tour="annotation-btn"
-        onClick={() => { setActive(a => !a); setPopup(null); }}
-        className={`fixed bottom-5 right-5 z-50 flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg text-sm font-semibold transition-all
-          ${active
-            ? "bg-blue-600 text-white ring-2 ring-blue-300"
-            : "bg-white text-blue-700 border border-blue-200 hover:bg-blue-50"}`}
-      >
-        {active ? "✏️ Annotieren aktiv" : "✏️ Edit"}
-      </button>
-
       {/* Popup */}
       {popup && (
         <div

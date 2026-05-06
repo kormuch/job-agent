@@ -6,6 +6,8 @@ export interface ApplicationJob {
   match_score: number | null;
   salary_min: number | null;
   salary_max: number | null;
+  source_url: string | null;
+  description: string;
   company: {
     id: number;
     name: string;

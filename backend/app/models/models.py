@@ -85,3 +85,14 @@ class Activity(Base):
     description    = Column(Text)
     happened_at    = Column(DateTime, server_default=func.now())
     application    = relationship("Application", back_populates="activities")
+
+class SearchProfile(Base):
+    __tablename__ = "search_profiles"
+    id            = Column(Integer, primary_key=True)
+    name          = Column(String(255), nullable=False)   # z.B. "AI Consulting Schweiz"
+    query         = Column(String(255), nullable=False)   # z.B. "AI Consultant Zürich"
+    location      = Column(String(100))                   # z.B. "Zürich"
+    cv_text       = Column(Text)                          # Eigenes Bewerberprofil dieser Persona
+    system_prompt = Column(Text)                          # Eigener Such-/Match-Prompt dieser Persona
+    active        = Column(Boolean, default=True)         # Deaktiviert statt gelöscht
+    created_at    = Column(DateTime, server_default=func.now())

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models.models import Company, Job
+from ..models.models import Company, Job, Application
 
 router = APIRouter(prefix="/scout", tags=["scout"])
 
@@ -46,8 +46,23 @@ def _extract_meta(html: str, url: str) -> dict:
     company = (
         meta("og:site_name") or
         meta("author") or
+        meta("publisher") or
+        meta("application-name") or
         ""
     )
+    # Versuche JSON-LD hiringOrganization für alle Quellen
+    if not company:
+        m = re.search(r'"hiringOrganization"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"', html)
+        if m: company = m.group(1)
+    # Versuche employer name aus strukturierten Daten
+    if not company:
+        m = re.search(r'"employerName"\s*:\s*"([^"]+)"', html)
+        if m: company = m.group(1)
+    # Aus Titel extrahieren: "Jobtitel - Firma | ..." oder "Jobtitel bei Firma"
+    if not company and title:
+        m = re.split(r"\s*[|\-–—]\s*", title)
+        if len(m) >= 2:
+            company = m[-1].strip()  # letztes Segment ist oft die Firma
     # Beschreibung
     description = (
         meta("og:description") or
@@ -70,6 +85,16 @@ def _extract_meta(html: str, url: str) -> dict:
         m = re.search(r'class="topcard__org-name-link[^"]*"[^>]*>([^<]+)<', html)
         if m: company = m.group(1).strip()
 
+    # Mojibake-Fix (latin-1 fälschlich als Encoding genutzt)
+    def _fix_encoding(s: str) -> str:
+        try:
+            return s.encode('latin-1').decode('utf-8')
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            return s
+
+    title   = _fix_encoding(title)
+    company = _fix_encoding(company)
+
     # Cleanup
     title   = re.sub(r"\s+", " ", title).strip()[:255]
     company = re.sub(r"\s+", " ", company).strip()[:255]
@@ -86,7 +111,8 @@ async def import_job(req: ImportRequest, db: Session = Depends(get_db)):
     # Duplikat-Check
     existing = db.query(Job).filter(Job.source_url == req.url).first()
     if existing:
-        return {"status": "already_exists", "job_id": existing.id}
+        in_pipeline = db.query(Application).filter(Application.job_id == existing.id).first() is not None
+        return {"status": "already_exists", "job_id": existing.id, "in_pipeline": in_pipeline}
 
     # HTML laden
     html = ""
@@ -105,8 +131,26 @@ async def import_job(req: ImportRequest, db: Session = Depends(get_db)):
 
     # Manuelle Überschreibung
     title        = req.title        or meta["title"]        or "Unbekannte Stelle"
-    company_name = req.company_name or meta["company"]      or "Unbekanntes Unternehmen"
     description  = meta["description"]
+
+    # Firma: manuell → extrahiert → Domain als letzter Fallback
+    if req.company_name:
+        company_name = req.company_name
+    elif meta["company"]:
+        company_name = meta["company"]
+    else:
+        # Aus JSON-LD name-Felder versuchen
+        m2 = re.search(r'"name"\s*:\s*"([^"]{3,80})"', html)
+        if m2:
+            company_name = m2.group(1).strip()
+        else:
+            # Domain als Fallback — nie "Unbekannt"
+            m3 = re.search(r"https?://(?:www\.)?([^/]+)", req.url)
+            if m3:
+                domain = m3.group(1)
+                company_name = domain.split(".")[0].capitalize()
+            else:
+                company_name = title.split()[0] if title else "—"
 
     # Quelle aus URL ableiten
     source = "Direkt"
@@ -151,71 +195,237 @@ class SearchRequest(BaseModel):
 @router.post("/search")
 async def search_jobs(req: SearchRequest):
     """
-    Sucht via DuckDuckGo nach Stellenanzeigen.
+    Sucht via ddgs-Bibliothek nach Stellenanzeigen.
     Gibt URLs + Titel zurück — kein Import, nur Vorschau.
     """
     import asyncio
+    from concurrent.futures import ThreadPoolExecutor
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "de-DE,de;q=0.9",
-    }
+    job_domains = ["stepstone", "linkedin", "indeed", "xing", "monster",
+                   "jobware", "jobs.de", "karriere", "stellenanzeigen",
+                   "arbeitsagentur", "jobvector", "absolventa", "heise.de/jobs",
+                   "glassdoor", "jobs.heise"]
 
-    # DuckDuckGo HTML-Suche (kein API-Key nötig)
-    search_url = "https://html.duckduckgo.com/html/"
-    params = {"q": req.query + " Stellenanzeige", "kl": "de-de"}
+    _aggregat_patterns = re.compile(
+        r"\d[\d\.]*\s+\w*\s*(jobs?|stellen?|stellenangebote?|ergebnisse?|treffer|angebote?|offene)"
+        r"|\bjetzt\s+\d"
+        r"|\bstellenangebote\b|\bstellenanzeigen\b|\bgehälter?\b"
+        r"|\bwas\s+macht\s+ein\b|\barbeiten\s+(für|bei|als)\b"
+        r"|jobs?\s+in\s+\w|\d+\s+offene|\boffene\s+stellen\b"
+        r"|\balle\b.{0,15}\bjobs?\b|\baktuelle[rns]?\b.{0,30}\bjobs?\b"
+        r"|\.de\s*$|\bsuche\b.{0,20}\bjobs?\b|\bfinde\b.{0,20}\bjobs?\b"
+        r"|\b\d+\s+aktuelle|\bstellen\s+für\b|\bjobs\s+für\b"
+        r"|\bmeinestadt\b|\bjooble\b|\bzuhausejobs\b|\bstartup\s*jobs\b"
+        r"|\bremote.*jobs\b|\bhomeoffice.*jobs\b|\bdringend!\b"
+        r"|\bvakans[ií]\b|\btuyển\s+dụng\b",   # nicht-deutsche Ergebnisse
+        re.I,
+    )
+    _list_url_patterns = re.compile(
+        r"/search|/jobs\?|/ergebnisse|/suchergebnis|query=|/jobs/search"
+        r"|[?&]q=|indeed\.com/jobs(?!/\d)|indeed\.com/q-"
+        r"|/gehalt|/salary|/ratgeber|/karrieretipps|/karriere-tipps"
+        r"|/stellen\?|/stellenangebote\?|/stellenanzeigen\?"
+        r"|jobs\.de/(?:suche|branchen|berufe)|glassdoor\.de/Job/jobs\.htm"
+        r"|meinestadt\.de|jooble\.|zuhausejobs|startupjobs"
+        r"|linkedin\.com/in/|xing\.com/profile/|xing\.com/xing/",  # Personenprofile
+        re.I,
+    )
 
-    results = []
-    try:
-        await asyncio.sleep(1)
-        async with httpx.AsyncClient(headers=headers, timeout=15, follow_redirects=True) as client:
-            r = await client.post(search_url, data=params)
-            html = r.text
+    def _fix_title(t: str) -> str:
+        """CamelCase aufbrechen und Leerzeichen normalisieren."""
+        t = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', t)
+        return re.sub(r'\s+', ' ', t).strip()
 
-        # Links aus DuckDuckGo-Ergebnis extrahieren
-        # DDG wraps links in //duckduckgo.com/l/?uddg=<encoded_url>
-        encoded_urls = re.findall(r'uddg=(https?[^&"]+)', html)
-        seen = set()
-        job_domains = ["stepstone", "linkedin", "indeed", "xing", "monster",
-                       "jobware", "jobs.de", "karriere", "stellenanzeigen"]
+    def _parse_title_company(raw_title: str, source: str) -> tuple[str, str]:
+        cleaned = re.split(r"\s*[|·]\s*(?=[^|·]*$)", raw_title, maxsplit=1)[0].strip()
+        m = re.split(r"\s+[-–—]\s+|\s+bei\s+|\s+@\s+", cleaned, maxsplit=1)
+        if len(m) == 2:
+            return _fix_title(m[0].strip()), m[1].strip()
+        return _fix_title(cleaned), ""
 
-        for enc in encoded_urls:
-            try:
-                from urllib.parse import unquote
-                url = unquote(enc)
-            except Exception:
-                url = enc
+    def _sync_search():
+        try:
+            from ddgs import DDGS
+            raw = list(DDGS().text(
+                req.query + " Stelle",
+                region="de-de",
+                max_results=req.max_results * 3,
+            ))
+            results = []
+            for item in raw:
+                url   = item.get("href", "")
+                title = item.get("title", "") or url
+                if not url:
+                    continue
+                if len(title.strip()) < 10:
+                    continue
+                # Jahreszahlen (alte Ergebnisse)
+                if re.search(r'\b20(1\d|2[0-3])\b', title):
+                    continue
+                # Kyrillisch / nicht-deutsch
+                if re.search(r'[А-Яа-яЁё]', title):
+                    continue
+                if _aggregat_patterns.search(title):
+                    continue
+                if _list_url_patterns.search(url):
+                    continue
+                if re.match(r"^\d+\s+\w+\s+\w+$", title.strip()):
+                    continue
 
-            if url in seen:
-                continue
-            seen.add(url)
-
-            # Titel aus DDG-Ergebnis holen
-            # Suche nach dem Anchor-Text nahe dieser URL
-            title_m = re.search(
-                rf'{re.escape(enc[:40])}[^"]*"[^>]*>\s*<[^>]+>([^<]{{5,120}})',
-                html
-            )
-            title = title_m.group(1).strip() if title_m else url
-
-            source = "Web"
-            for d in ["stepstone", "linkedin", "indeed", "xing", "jobs.de"]:
-                if d in url:
-                    source = d.capitalize()
+                source = "Web"
+                for d in ["stepstone", "linkedin", "indeed", "xing", "jobs.de", "glassdoor"]:
+                    if d in url.lower():
+                        source = d.capitalize()
+                        break
+                url_low = url.lower()
+                if (any(d in url_low for d in job_domains)
+                        or "job" in url_low
+                        or "stell" in url_low
+                        or "karriere" in url_low):
+                    job_title, company = _parse_title_company(title, source)
+                    results.append({
+                        "url": url,
+                        "title": job_title,
+                        "company": company,
+                        "source": source,
+                    })
+                if len(results) >= req.max_results:
                     break
+            return results
+        except Exception:
+            return []
 
-            # Nur relevante Job-Seiten
-            if any(d in url.lower() for d in job_domains) or "job" in url.lower() or "stell" in url.lower():
-                results.append({"url": url, "title": title, "source": source})
-
-            if len(results) >= req.max_results:
-                break
-
-    except Exception as e:
-        return {"results": [], "error": str(e)}
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor() as pool:
+        results = await loop.run_in_executor(pool, _sync_search)
 
     return {"results": results}
+
+
+@router.post("/auto-search")
+async def auto_search(max_results: int = 8):
+    """
+    Liest den Such-Prompt aus config.json, lässt das LLM Suchqueries generieren
+    und führt diese gegen DuckDuckGo aus. Gibt alle gefundenen Stellen zurück.
+    """
+    import json
+    import sys
+    from pathlib import Path
+
+    # Config + Prompt laden
+    cfg_path = Path(__file__).resolve().parents[3] / "db" / "config.json"
+    config = {}
+    if cfg_path.exists():
+        try:
+            config = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    system_prompt = config.get("system_prompt", "").strip()
+    groq_key   = config.get("groq_api_key", "")
+    gemini_key = config.get("gemini_api_key", "")
+
+    # Fallback-Queries wenn kein Prompt oder kein Key
+    default_queries = [
+        "AI Product Owner Stuttgart",
+        "Head of AI München Remote",
+        "AI Solution Architect Stuttgart",
+        "AI Solution Architect Remote Deutschland",
+        "AI Consultant Stuttgart",
+        "AI Consultant München Remote",
+        "Technical Product Manager AI Stuttgart",
+        "LLM Product Manager Remote Deutschland",
+        "Product Owner Digital Baden-Württemberg",
+        "Product Owner Softwareentwicklung Stuttgart",
+    ]
+
+    queries = default_queries
+
+    if system_prompt and (groq_key or gemini_key):
+        try:
+            llm_prompt = f"""Basierend auf diesem Kandidaten-Profil, generiere genau 8 DuckDuckGo-Suchbegriffe für Stellenanzeigen.
+Antworte NUR mit einem JSON-Array von Strings. Keine Erklärung, kein Markdown.
+Berücksichtige folgende Zieltitel: AI Product Owner, AI Consultant, AI Solution Architect, Head of AI, Technical Product Manager AI, LLM Product Manager.
+Zielregionen: Stuttgart, München, Tübingen, Remote Deutschland, Baden-Württemberg.
+Beispiel: ["AI Product Owner Stuttgart", "AI Solution Architect Remote Deutschland", "AI Consultant München", ...]
+
+Kandidaten-Profil:
+{system_prompt[:1500]}"""
+
+            async with httpx.AsyncClient(timeout=20) as client:
+                if groq_key:
+                    r = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        json={
+                            "model": "llama-3.3-70b-versatile",
+                            "messages": [{"role": "user", "content": llm_prompt}],
+                            "temperature": 0.3,
+                            "max_tokens": 256,
+                        },
+                        headers={"Authorization": f"Bearer {groq_key}"},
+                    )
+                    raw = r.json()["choices"][0]["message"]["content"]
+                else:
+                    r = await client.post(
+                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}",
+                        json={"contents": [{"parts": [{"text": llm_prompt}]}]},
+                    )
+                    raw = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+            raw = re.sub(r"```(?:json)?", "", raw).strip()
+            m = re.search(r"\[.*\]", raw, re.S)
+            if m:
+                parsed = json.loads(m.group(0))
+                if isinstance(parsed, list) and all(isinstance(q, str) for q in parsed):
+                    queries = parsed[:8]
+        except Exception:
+            queries = default_queries
+
+    # Suchen
+    import asyncio
+    all_results = []
+    seen_urls: set = set()
+    for q in queries:
+        try:
+            r = await search_jobs(SearchRequest(query=q, max_results=max_results))
+            for item in r.get("results", []):
+                if item["url"] not in seen_urls:
+                    seen_urls.add(item["url"])
+                    all_results.append(item)
+        except Exception:
+            pass
+        await asyncio.sleep(0.5)
+
+    return {"results": all_results, "queries_used": queries}
+
+
+@router.post("/fetch-description/{job_id}")
+async def fetch_description(job_id: int, db: Session = Depends(get_db)):
+    """Re-fetcht die Stellenbeschreibung für einen Job aus der hinterlegten source_url."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job or not job.source_url:
+        return {"status": "error", "detail": "Kein Job oder keine URL gefunden"}
+
+    html = ""
+    try:
+        async with httpx.AsyncClient(timeout=12, follow_redirects=True, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "de-DE,de;q=0.9",
+        }) as client:
+            resp = await client.get(job.source_url)
+            html = resp.text
+    except Exception:
+        return {"status": "error", "detail": "URL nicht erreichbar"}
+
+    meta = _extract_meta(html, job.source_url)
+    description = meta.get("description", "")
+
+    if description:
+        job.description = description
+        db.commit()
+        return {"status": "ok", "description": description}
+    return {"status": "empty", "description": ""}
 
 
 @router.get("/jobs")

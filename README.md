@@ -227,11 +227,13 @@ wirkt bei jedem Call automatisch mit. Beispiel:
 - [x] Einstellungen-Seite: CV-Editor + API-Key-Verwaltung
 - [x] SQLite (kein laufender DB-Server nötig)
 
-### In Arbeit / Nächste Schritte
-- [ ] System-Prompt / Persona in UI editierbar (AI Agenten-Seite)
-- [ ] Message Drafter: Anschreiben + LinkedIn-Nachricht generieren
-- [ ] Nacht-Scheduler: automatische Job-Suche via DuckDuckGo + Score
+### In Arbeit / Nächste Schritte (Priorität)
+- [ ] **Message Drafter**: CV + Stelle + System-Prompt → Anschreiben + LinkedIn-Nachricht (Groq) — `POST /draft/{job_id}`
+- [ ] **Nacht-Scheduler**: Windows Task Scheduler → DuckDuckGo-Suche → neue Jobs in DB → Auto-Score → autonomer Agentic Loop
 - [ ] Kontakte in Unternehmensansicht bearbeiten
+- [ ] **Sicherheit: API Keys in `.env` auslagern** — Keys aktuell in `db/config.json` (Klartext); bereits vorbereitet via `dotenv` in `main.py`, nur noch UI-Speicherung umstellen
+- [ ] **Sicherheit: Git-History prüfen** — sicherstellen dass `db/config.json` nie committed wurde (`git log --all -- db/config.json`)
+- [ ] **Contacts-Löschfunktion** — Drittdaten (HR-Kontakte, CEOs) müssen löschbar sein
 
 ### Geplant (Phase 3)
 - [ ] Follow-up Reminder (Frist überschritten → Hinweis im Dashboard)
@@ -242,6 +244,37 @@ wirkt bei jedem Call automatisch mit. Beispiel:
 - [ ] Form Filler (Playwright-Automation für Bewerbungsportale)
 - [ ] PDF-Export der Pipeline
 - [ ] Optionales Login (multi-user)
+
+---
+
+## Datenschutz & Sicherheit (Stand: 28.04.2026)
+
+### Datenspeicherung
+| Datei | Inhalt | Schutz |
+|---|---|---|
+| `db/jobagent.db` | Bewerbungen, Jobs, Kontakte, Aktivitäten | Unverschlüsselt (SQLite) |
+| `db/cv.md` | Vollständiger Lebenslauf | Unverschlüsselt (Klartext) |
+| `db/config.json` | API Keys (Groq/Gemini), System-Prompt mit Name + Gehalt | Unverschlüsselt (Klartext) |
+
+### Externe Datenflüsse
+| Ziel | Was wird gesendet | Anmerkung |
+|---|---|---|
+| **Groq API (USA)** | CV + Stellenbeschreibung | Daten verlassen EU, kein AVV |
+| **Gemini/Google (USA)** | CV + Stellenbeschreibung (Fallback) | Daten verlassen EU |
+| **DuckDuckGo** | Suchanfragen (Jobtitel, Region) | Unkritisch, keine PD |
+| **Firmenwebsites** | HTTP-Request mit Chrome User-Agent | Scraping, robots.txt nicht geprüft |
+| **Kununu** | Automatisierter HTTP-Zugriff | Ggf. gegen AGB |
+
+### DSGVO-Bewertung
+- **Eigene Daten:** DSGVO Art. 2(2)(c) greift — private Haushaltsnutzung, kein öffentlicher Zugang → **unkritisch**
+- **Drittdaten (contacts-Tabelle):** HR-Kontakte, CEO-Namen, E-Mails werden ohne Einwilligung gescrapt → **grenzwertig**, solange rein privat genutzt
+- **ISO 27001:** Nicht anwendbar — Zertifizierungsstandard für Organisationen, nicht für Einzeltools
+
+### Offene Punkte (→ TODO)
+- [ ] API Keys in `.env` statt `config.json` (Klartext-Risiko)
+- [ ] Git-History prüfen: `git log --all -- db/config.json`
+- [ ] Contacts-Löschfunktion für Drittdaten
+- [ ] Bei Produktisierung: AVV mit Groq/Gemini, `.env`-Verschlüsselung, Login-Schutz
 
 ---
 

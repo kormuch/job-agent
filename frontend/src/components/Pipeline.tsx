@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchApplications, updateStatus, type Application } from "../api/applications";
 import { MatchBadge } from "./MatchBadge";
+import CompanyModal from "./CompanyModal";
 
 const STATUS_COLORS: Record<string, string> = {
   offen:          "bg-gray-100 text-gray-600",
@@ -14,7 +15,21 @@ const STATUS_COLORS: Record<string, string> = {
   ghosted:        "bg-gray-200 text-gray-500",
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  offen:          "Offen",
+  kontaktiert:    "Kontaktiert",
+  beworben:       "Beworben",
+  im_gespräch:    "Im Gespräch",
+  interview:      "Interview",
+  angebot:        "Angebot",
+  abgeschlossen:  "Abgeschlossen",
+  absage:         "Absage",
+  ghosted:        "Ghosted",
+};
+
 const STATUSES = ["offen","kontaktiert","beworben","im_gespräch","interview","angebot","abgeschlossen","absage","ghosted"];
+
+const INACTIVE_STATUSES = new Set(["absage", "ghosted", "abgeschlossen"]);
 
 const PRIORITY_ORDER: Record<string, number> = { top: 0, mittel: 1, pipeline: 2 };
 
@@ -35,7 +50,10 @@ function sortApps(apps: Application[], key: SortKey, dir: SortDir) {
     if (key === "followup") { av = a.follow_up_date ?? "";                             bv = b.follow_up_date ?? ""; }
     if (av < bv) return dir === "asc" ? -1 : 1;
     if (av > bv) return dir === "asc" ? 1 : -1;
-    return 0;
+    // Sekundärsortierung: bei Gleichstand nach Unternehmen alphabetisch
+    const ac = a.job?.company.name ?? "";
+    const bc = b.job?.company.name ?? "";
+    return ac.localeCompare(bc, "de");
   });
 }
 
@@ -107,14 +125,92 @@ function MatchDetail({ result, onClose }: { result: MatchResult; onClose: () => 
   );
 }
 
+interface JobDetail {
+  jobId: number;
+  title: string;
+  company: string;
+  description: string;
+  source_url: string | null;
+}
+
+function JobDescModal({ job, onClose }: { job: JobDetail; onClose: () => void }) {
+  const [desc, setDesc]       = useState(job.description);
+  const [fetching, setFetching] = useState(false);
+  const [fetchMsg, setFetchMsg] = useState("");
+
+  async function handleFetch() {
+    setFetching(true);
+    setFetchMsg("");
+    try {
+      const res = await fetch(`http://localhost:8002/scout/fetch-description/${job.jobId}`, { method: "POST" });
+      const data = await res.json();
+      if (data.status === "ok" && data.description) {
+        setDesc(data.description);
+        setFetchMsg("✅ Beschreibung geladen");
+      } else {
+        setFetchMsg("⚠️ Keine Beschreibung extrahierbar (Seite blockiert oder kein Text)");
+      }
+    } catch {
+      setFetchMsg("❌ Fehler beim Laden");
+    } finally {
+      setFetching(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[80vh]">
+        <div className="px-6 py-4 border-b border-blue-100 flex items-start justify-between gap-4">
+          <div>
+            <div className="font-semibold text-blue-900 text-base">{job.title}</div>
+            <div className="text-sm text-blue-400">{job.company}</div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {job.source_url && (
+              <a href={job.source_url} target="_blank" rel="noopener noreferrer"
+                className="text-xs text-blue-500 hover:text-blue-700 underline">
+                Original ↗
+              </a>
+            )}
+            <button onClick={onClose} className="text-blue-300 hover:text-blue-600 text-xl">×</button>
+          </div>
+        </div>
+        <div className="px-6 py-4 overflow-y-auto text-sm text-blue-800 leading-relaxed whitespace-pre-wrap flex-1">
+          {desc
+            ? desc
+            : (
+              <div className="flex flex-col items-start gap-3">
+                <span className="text-blue-300 italic">Keine Stellenbeschreibung gespeichert.</span>
+                {job.source_url && (
+                  <button
+                    onClick={handleFetch}
+                    disabled={fetching}
+                    className="text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    {fetching ? "Lade…" : "Beschreibung von URL laden"}
+                  </button>
+                )}
+                {fetchMsg && <span className="text-xs text-blue-600">{fetchMsg}</span>}
+              </div>
+            )
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Pipeline() {
   const [apps, setApps] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>("company");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [sortKey, setSortKey] = useState<SortKey>("applied");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [scoring, setScoring] = useState<number | null>(null);
   const [matchDetail, setMatchDetail] = useState<MatchResult | null>(null);
+  const [jobDetail, setJobDetail] = useState<JobDetail | null>(null);
+  const [companyModal, setCompanyModal] = useState<{ id: number; name: string; website: string | null } | null>(null);
 
   useEffect(() => {
     fetchApplications()
@@ -180,15 +276,44 @@ export default function Pipeline() {
             </tr>
           </thead>
           <tbody className="select-text">
-            {sorted.map(a => (
-              <tr key={a.id} className="border-b border-blue-50 hover:bg-blue-50 transition-colors">
+            {sorted.map(a => {
+              const inactive = INACTIVE_STATUSES.has(a.status);
+              return (
+              <tr key={a.id} className={`border-b border-blue-50 transition-colors ${inactive ? "opacity-50" : "hover:bg-blue-50"}`}>
                 <td className="px-4 py-3 font-medium text-blue-900">
-                  {a.job?.company.name ?? "—"}
+                  <span
+                    className="cursor-pointer hover:text-blue-600 hover:underline"
+                    onClick={() => a.job && setCompanyModal({
+                      id: a.job.company.id,
+                      name: a.job.company.name,
+                      website: a.job.company.website ?? null,
+                    })}
+                    title="Unternehmensinfo"
+                  >
+                    {a.job?.company.name ?? "—"}
+                  </span>
                   {a.job?.company.location && (
                     <div className="text-xs text-blue-400 font-normal">{a.job.company.location}</div>
                   )}
                 </td>
-                <td className="px-4 py-3 text-blue-800">{a.job?.title ?? "—"}</td>
+                <td className="px-4 py-3 text-blue-800">
+                  <span
+                    className="cursor-pointer hover:text-blue-600 hover:underline"
+                    onClick={() => a.job && setJobDetail({
+                      jobId: a.job.id,
+                      title: a.job.title,
+                      company: a.job.company.name,
+                      description: a.job.description,
+                      source_url: a.job.source_url ?? null,
+                    })}
+                    title="Stellenbeschreibung anzeigen"
+                  >
+                    {a.job?.title ?? "—"}
+                  </span>
+                  {a.notes && (
+                    <div className="text-xs text-blue-400 font-normal truncate max-w-xs" title={a.notes}>{a.notes}</div>
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <span className="text-sm">{
                     a.priority === "top" ? "🟢 Top" :
@@ -202,14 +327,14 @@ export default function Pipeline() {
                     className={`text-xs font-semibold px-2 py-1 rounded-full border-0 cursor-pointer ${STATUS_COLORS[a.status] ?? "bg-gray-100"}`}
                   >
                     {STATUSES.map(s => (
-                      <option key={s} value={s}>{s}</option>
+                      <option key={s} value={s}>{STATUS_LABELS[s] ?? s}</option>
                     ))}
                   </select>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <MatchBadge score={a.job?.match_score} />
-                    {a.job?.id && (
+                    {a.job?.id && !inactive && (
                       <button
                         onClick={() => handleScore(a.job!.id)}
                         disabled={scoring === a.job.id}
@@ -221,15 +346,21 @@ export default function Pipeline() {
                     )}
                   </div>
                 </td>
-                <td className="px-4 py-3 text-blue-700">
-                  {a.job?.salary_min && a.job?.salary_max
-                    ? `${(a.job.salary_min/1000).toFixed(0)}–${(a.job.salary_max/1000).toFixed(0)}k`
-                    : "—"}
+                <td className="px-4 py-3 text-blue-700 whitespace-nowrap">
+                  {a.salary_target
+                    ? `${(a.salary_target/1000).toFixed(0)}k`
+                    : a.job?.salary_min && a.job?.salary_max
+                      ? `${(a.job.salary_min/1000).toFixed(0)}–${(a.job.salary_max/1000).toFixed(0)}k`
+                      : "—"}
+                  {a.salary_target && a.job?.salary_min && a.job?.salary_max && (
+                    <div className="text-xs text-blue-400">{(a.job.salary_min/1000).toFixed(0)}–{(a.job.salary_max/1000).toFixed(0)}k Range</div>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-blue-400 text-xs">{a.applied_at ?? "—"}</td>
                 <td className="px-4 py-3 text-blue-400 text-xs">{a.follow_up_date ?? "—"}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -237,6 +368,17 @@ export default function Pipeline() {
 
     {matchDetail && (
       <MatchDetail result={matchDetail} onClose={() => setMatchDetail(null)} />
+    )}
+    {jobDetail && (
+      <JobDescModal job={jobDetail} onClose={() => setJobDetail(null)} />
+    )}
+    {companyModal && (
+      <CompanyModal
+        companyId={companyModal.id}
+        companyName={companyModal.name}
+        websiteUrl={companyModal.website}
+        onClose={() => setCompanyModal(null)}
+      />
     )}
     </>
   );

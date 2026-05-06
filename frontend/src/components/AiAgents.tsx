@@ -16,6 +16,8 @@ interface MatchResult {
   strengths: string[];
   gaps: string[];
   summary: string;
+  salary_min: number | null;
+  salary_max: number | null;
 }
 
 // ── Status Badge ──────────────────────────────────────────────────────────────
@@ -192,7 +194,7 @@ export default function AiAgents() {
 
         {result && (
           <div className="mt-4 flex flex-col gap-3">
-            <div className="flex items-baseline gap-3">
+            <div className="flex items-baseline gap-3 flex-wrap">
               <span className={`text-5xl font-bold ${
                 result.score >= 70 ? "text-green-600" :
                 result.score >= 50 ? "text-yellow-500" : "text-red-500"
@@ -202,6 +204,15 @@ export default function AiAgents() {
                 result.score >= 70 ? "Guter Match" :
                 result.score >= 50 ? "Teilweiser Match" : "Schwacher Match"
               }</span>
+              {(result.salary_min != null || result.salary_max != null) && (
+                <span className="ml-auto text-sm font-medium text-blue-800 bg-blue-50 px-3 py-1 rounded-lg">
+                  {result.salary_min != null && result.salary_max != null
+                    ? `${(result.salary_min / 1000).toFixed(0)}k – ${(result.salary_max / 1000).toFixed(0)}k €`
+                    : result.salary_min != null
+                      ? `ab ${(result.salary_min / 1000).toFixed(0)}k €`
+                      : `bis ${(result.salary_max! / 1000).toFixed(0)}k €`}
+                </span>
+              )}
             </div>
             <p className="text-sm text-blue-800 leading-relaxed">{result.summary}</p>
             {result.strengths.length > 0 && (
