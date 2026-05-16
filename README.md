@@ -234,6 +234,7 @@ wirkt bei jedem Call automatisch mit. Beispiel:
 - [ ] **Sicherheit: API Keys in `.env` auslagern** — Keys aktuell in `db/config.json` (Klartext); bereits vorbereitet via `dotenv` in `main.py`, nur noch UI-Speicherung umstellen
 - [ ] **Sicherheit: Git-History prüfen** — sicherstellen dass `db/config.json` nie committed wurde (`git log --all -- db/config.json`)
 - [ ] **Contacts-Löschfunktion** — Drittdaten (HR-Kontakte, CEOs) müssen löschbar sein
+- [ ] **Automatisierte Tests** — pytest Smoke-Tests für alle FastAPI-Routes mit Fixture-Daten (mindestens: alle Routes antworten 200, Match-Score ist Integer 0–100)
 
 ### Geplant (Phase 3)
 - [ ] Follow-up Reminder (Frist überschritten → Hinweis im Dashboard)
@@ -285,6 +286,22 @@ wirkt bei jedem Call automatisch mit. Beispiel:
 | Automatische Job-Suche teilweise geblockt | Stepstone/Indeed blocken Bots | DuckDuckGo-Suche + langsame Requests |
 | Gemini 429-Fehler | Billing nicht aktiviert im Google-Account | Groq als primären Provider nutzen |
 | Port 8000 manchmal belegt | Windows TIME_WAIT nach mehrfachem Neustart | Port 8002 verwenden |
+
+---
+
+## Claude Code Integration
+
+### CLAUDE.md
+`CLAUDE.md` im Projektstamm enthält den Session-Kontext für Claude Code: Architekturregeln, LLM-Aufrufstruktur, offene Security-TODOs und Kommunikationsregeln. **Am Ende jeder Session updaten** (abgehakte TODOs, neue Limitierungen, Architekturänderungen).
+
+### Projektspezifischer Skill
+Ein Claude Code Skill unter `~/.claude/skills/jobagent/SKILL.md` würde Kontext automatisch laden wenn Trigger-Keywords erkannt werden (`jobagent`, `bewerbungsmanager`, `match scorer`, `scout import`). Referenz-Format: `~/.claude/skills/iu-nlp/SKILL.md` (VocaDine-Projekt).
+
+**Was der Skill enthalten sollte:**
+- LLM-Call-Architektur (System-Prompt + CV + XML-tagged job)
+- Status-Pipeline Naming Conventions
+- Security-Constraints (CV nie loggen, config.json nie committen)
+- Aktuelle Feature-Prioritäten
 
 ---
 
