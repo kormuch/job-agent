@@ -42,15 +42,34 @@ def _load_config() -> dict:
     return {}
 
 def _save_config(data: dict):
+    """Speichert nicht-geheime Felder (system_prompt) in config.json."""
     existing = _load_config()
     existing.update(data)
     _CFG_PATH.write_text(json.dumps(existing, indent=2), encoding="utf-8")
 
+def _save_env_key(env_name: str, value: str):
+    """Schreibt API-Key in .env und aktualisiert den laufenden Prozess (kein Restart nötig)."""
+    env_path = _ROOT / ".env"
+    lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    prefix = f"{env_name}="
+    found = False
+    new_lines = []
+    for line in lines:
+        if line.startswith(prefix):
+            new_lines.append(f"{env_name}={value}")
+            found = True
+        else:
+            new_lines.append(line)
+    if not found:
+        new_lines.append(f"{env_name}={value}")
+    env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    os.environ[env_name] = value  # sofort wirksam ohne Neustart
+
 def _get_gemini_key() -> str:
-    return os.getenv("GEMINI_API_KEY") or _load_config().get("gemini_api_key", "")
+    return os.getenv("GEMINI_API_KEY", "")
 
 def _get_groq_key() -> str:
-    return os.getenv("GROQ_API_KEY") or _load_config().get("groq_api_key", "")
+    return os.getenv("GROQ_API_KEY", "")
 
 def _get_api_key() -> str:
     return _get_groq_key() or _get_gemini_key()
@@ -185,14 +204,12 @@ def _get_system_prompt() -> str:
 
 @router.post("/config")
 def save_config(body: ConfigBody):
-    update = {}
-    if body.gemini_api_key is not None:
-        update["gemini_api_key"] = body.gemini_api_key.strip()
     if body.groq_api_key is not None:
-        update["groq_api_key"] = body.groq_api_key.strip()
+        _save_env_key("GROQ_API_KEY", body.groq_api_key.strip())
+    if body.gemini_api_key is not None:
+        _save_env_key("GEMINI_API_KEY", body.gemini_api_key.strip())
     if body.system_prompt is not None:
-        update["system_prompt"] = body.system_prompt.strip()
-    _save_config(update)
+        _save_config({"system_prompt": body.system_prompt.strip()})
     return {"saved": True}
 
 @router.get("/config")

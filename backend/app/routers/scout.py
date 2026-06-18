@@ -313,6 +313,7 @@ async def auto_search(max_results: int = 8):
     from pathlib import Path
 
     # Config + Prompt laden
+    import os
     cfg_path = Path(__file__).resolve().parents[3] / "db" / "config.json"
     config = {}
     if cfg_path.exists():
@@ -322,8 +323,8 @@ async def auto_search(max_results: int = 8):
             pass
 
     system_prompt = config.get("system_prompt", "").strip()
-    groq_key   = config.get("groq_api_key", "")
-    gemini_key = config.get("gemini_api_key", "")
+    groq_key   = os.getenv("GROQ_API_KEY", "")
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
 
     # Fallback-Queries wenn kein Prompt oder kein Key
     default_queries = [

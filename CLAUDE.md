@@ -14,7 +14,7 @@ Full-stack AI-powered Bewerbungsmanager. Finds jobs, researches companies, score
 
 **Stack:** React 19 + TypeScript + Tailwind CSS v4 + Vite (frontend) | FastAPI + SQLAlchemy + SQLite (backend) | Groq llama-3.3-70b-versatile | Playwright + httpx (scraping)
 
-**Start:** `powershell -ExecutionPolicy Bypass -File C:\Users\kormu\projekte\JobAgent_Tool\start.ps1`
+**Start:** `powershell -ExecutionPolicy Bypass -File start.ps1`
 - Frontend: http://localhost:5173
 - Backend: http://localhost:8002 (port 8000 often blocked by Windows TIME_WAIT)
 - API Docs: http://localhost:8002/docs
@@ -68,8 +68,8 @@ Every LLM call structure:
 
 ## Security TODOs (open)
 
-- [ ] API keys currently in `db/config.json` (plaintext) — migrate to `.env` (dotenv already in main.py, only UI save needs updating)
-- [ ] Check git history: `git log --all -- db/config.json` to confirm keys never committed
+- [x] API keys migrated to `.env` — `POST /match/config` writes to `.env` + `os.environ` (no restart needed); `config.json` holds `system_prompt` only
+- [x] Git history verified: `db/config.json` never committed
 - [ ] Suspicious-pattern logging in LLM inputs (`ignore`, `system prompt`, `vergiss`)
 - [ ] Output validation: match score must be Integer 0–100
 - [ ] Contacts delete function (GDPR — HR contact data scraped without consent)

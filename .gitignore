@@ -9,6 +9,7 @@ db/config.json
 db/jobagent.db
 db/*.db
 annotations.json
+tool-pruefung-leadec-briefing.md
 
 # Python
 __pycache__/

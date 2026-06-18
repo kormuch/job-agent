@@ -1,6 +1,6 @@
 # JobAgent — AI-powered Bewerbungsmanager
 
-Tool das automatisch Stellen findet, Unternehmensauskünfte einholt, Bewerbungen bewertet und den gesamten Bewerbungsprozess managt. Gebaut für Korbinian Much, perspektivisch als generisches Produkt ausbaubar.
+Self-built tool for automated job search management. Finds jobs, researches companies, scores CV fit via LLM, and manages the full application pipeline. Built for personal use — designed to be extendable as a generic product.
 
 ---
 
@@ -11,7 +11,7 @@ Tool das automatisch Stellen findet, Unternehmensauskünfte einholt, Bewerbungen
 | Frontend | React + TypeScript + Tailwind CSS v4 + Vite |
 | Backend | Python 3.12 + FastAPI + SQLAlchemy |
 | Datenbank | SQLite (`db/jobagent.db`) |
-| KI | **Groq** (primär) + Gemini (Fallback) — aktiv |
+| AI | **Groq** (primär) + Gemini (Fallback) — aktiv |
 | Scraping | Playwright + httpx (lokal, €0) |
 | Job-Import | URL-basiert (Stepstone, LinkedIn, Indeed, Direktseiten) |
 | Unternehmensdaten | Firmenwebsite (Playwright) + Google News RSS + Kununu |
@@ -24,17 +24,17 @@ Tool das automatisch Stellen findet, Unternehmensauskünfte einholt, Bewerbungen
 
 **Empfohlen:**
 ```powershell
-powershell -ExecutionPolicy Bypass -File C:\Users\kormu\projekte\JobAgent_Tool\start.ps1
+powershell -ExecutionPolicy Bypass -File start.ps1
 ```
 
 **Manuell (zwei Terminals):**
 ```bash
 # Terminal 1 — Backend
-cd C:\Users\kormu\projekte\JobAgent_Tool\backend
-C:\Users\kormu\anaconda3\python.exe -m uvicorn app.main:app --reload --port 8002
+cd backend
+python -m uvicorn app.main:app --reload --port 8002
 
 # Terminal 2 — Frontend
-cd C:\Users\kormu\projekte\JobAgent_Tool\frontend
+cd frontend
 npm run dev
 ```
 
@@ -231,8 +231,8 @@ wirkt bei jedem Call automatisch mit. Beispiel:
 - [ ] **Message Drafter**: CV + Stelle + System-Prompt → Anschreiben + LinkedIn-Nachricht (Groq) — `POST /draft/{job_id}`
 - [ ] **Nacht-Scheduler**: Windows Task Scheduler → DuckDuckGo-Suche → neue Jobs in DB → Auto-Score → autonomer Agentic Loop
 - [ ] Kontakte in Unternehmensansicht bearbeiten
-- [ ] **Sicherheit: API Keys in `.env` auslagern** — Keys aktuell in `db/config.json` (Klartext); bereits vorbereitet via `dotenv` in `main.py`, nur noch UI-Speicherung umstellen
-- [ ] **Sicherheit: Git-History prüfen** — sicherstellen dass `db/config.json` nie committed wurde (`git log --all -- db/config.json`)
+- [x] **Sicherheit: API Keys in `.env` auslagern** — `POST /match/config` schreibt Keys jetzt in `.env` statt `config.json`; `config.json` enthält nur noch `system_prompt`
+- [x] **Sicherheit: Git-History prüfen** — `git log --all -- db/config.json` bestätigt: nie committed
 - [ ] **Contacts-Löschfunktion** — Drittdaten (HR-Kontakte, CEOs) müssen löschbar sein
 - [ ] **Automatisierte Tests** — pytest Smoke-Tests für alle FastAPI-Routes mit Fixture-Daten (mindestens: alle Routes antworten 200, Match-Score ist Integer 0–100)
 
