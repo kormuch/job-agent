@@ -57,27 +57,38 @@ JobAgent_Tool/
 ├── index.html                  ← HTML-Dummy (Referenz, nicht aktiv)
 ├── db/
 │   ├── jobagent.db             ← SQLite Datenbank
-│   ├── schema.sql              ← Schema-Referenz
+│   ├── cv.md                   ← CV-Text für Match Scoring
+│   ├── config.json             ← System-Prompt (keine API Keys)
 │   └── migrate_to_sqlite.py   ← einmalig ausgeführt (PostgreSQL → SQLite)
 ├── backend/
 │   └── app/
 │       ├── main.py             ← FastAPI App, CORS, Router-Registrierung
 │       ├── database.py         ← SQLAlchemy Engine (SQLite)
 │       ├── models/
-│       │   └── models.py       ← ORM: Company, Job, Contact, Application, Activity
+│       │   └── models.py       ← ORM: Company, Job, Contact, Application, Activity, SearchProfile
+│       ├── agents/
+│       │   ├── __init__.py
+│       │   └── pipeline.py     ← A2A Pipeline: ScoutAgent, MatchAgent, FilterAgent, OrchestratorAgent
 │       └── routers/
 │           ├── applications.py ← GET /applications/, PATCH /applications/{id}/status
 │           ├── annotations.py  ← GET/POST /annotations/, DELETE /annotations/{index}
-│           ├── scout.py        ← POST /scout/import, GET /scout/jobs
-│           └── research.py     ← GET /research/{id}, GET /research/{id}/news
+│           ├── scout.py        ← POST /scout/import, GET /scout/jobs, POST /scout/search
+│           ├── research.py     ← GET /research/{id}, GET /research/{id}/news
+│           ├── match.py        ← POST /match/{job_id}, POST /match/text/score
+│           ├── searches.py     ← CRUD für gespeicherte Suchprofile
+│           └── orchestrator.py ← POST /orchestrator/run, POST /orchestrator/run/auto
 └── frontend/
     └── src/
         ├── App.tsx             ← Layout, Navigation, Routing
         ├── api/
-        │   └── applications.ts ← fetch-Wrapper, Typen
+        │   ├── applications.ts ← fetch-Wrapper, Typen
+        │   ├── scout.ts        ← Scout + Suchprofile + Orchestrator
+        │   └── research.ts     ← Unternehmensrecherche
         └── components/
             ├── Dashboard.tsx   ← KPI-Cards + Mini-Pipeline (sortierbar)
             ├── Pipeline.tsx    ← Vollständige Pipeline-Tabelle (sortierbar, kopierbar)
+            ├── JobFinder.tsx   ← Stellenfinder: Import, Auto-Suche, Scheduler, Profile
+            ├── AiAgents.tsx    ← AI-Status, System-Prompt, Ad-hoc Scoring
             ├── Feedback.tsx    ← Annotation-Feedback-Seite mit "Umgesetzt"-Button
             ├── MatchBadge.tsx  ← Ampel-Komponente (grün/gelb/rot/weiß)
             └── AnnotationLayer.tsx ← Stift-Button, Element-Picker, Kommentar-Popup
@@ -147,9 +158,67 @@ Extrahiert automatisch: Titel, Firma, Beschreibung via Meta-Tags + plattformspez
 
 Scrapt automatisch `/team`, `/kontakt`, `/about`, `/impressum` der Firmenwebsite. Extrahiert Emails (Regex), Telefonnummern, HR-Kontakte per Heuristik.
 
+### Orchestrator (A2A Pipeline)
+| Method | Endpoint | Beschreibung |
+|---|---|---|
+| POST | `/orchestrator/run` | A2A-Pipeline mit expliziten Queries starten |
+| POST | `/orchestrator/run/auto` | Queries per LLM generieren, dann Pipeline starten |
+
+**Beispiel:**
+```json
+POST /orchestrator/run
+{
+  "queries": ["AI Product Owner Stuttgart", "AI Consultant Remote"],
+  "min_score": 60,
+  "max_per_query": 5
+}
+```
+
+**Response:**
+```json
+{
+  "run_summary": {
+    "imported": 6,
+    "skipped_dupes": 2,
+    "scored": 6,
+    "passed_filter": 4,
+    "rejected": 2,
+    "min_score": 60
+  },
+  "results": [{"job_id": 1, "title": "...", "score": 85, "strengths": [...], ...}],
+  "log": ["[ScoutAgent] ...", "[MatchAgent] ...", "[FilterAgent] ..."]
+}
+```
+
 ---
 
-## KI-System (Stand: 10.04.2026)
+## A2A Pipeline (Agent-to-Agent)
+
+Vollautomatische Job-Discovery-Pipeline mit Multi-Agent-Architektur:
+
+```
+OrchestratorAgent
+  ├── ScoutAgent      DuckDuckGo-Suche → URL-Filter → Meta-Extraktion → DB-Import
+  ├── MatchAgent      CV + Stellenbeschreibung → LLM-Scoring (Groq/Gemini)
+  └── FilterAgent     Guardrail: nur Jobs über Score-Schwelle durchlassen
+```
+
+### Ablauf
+1. **ScoutAgent** sucht via DuckDuckGo nach Stellen, filtert Aggregator-Seiten und Duplikate, importiert neue Jobs in die DB
+2. **MatchAgent** bewertet jeden importierten Job gegen den CV via LLM (Score 0–100, Stärken, Lücken, Gehaltsschätzung)
+3. **FilterAgent** lässt nur Jobs über dem Schwellenwert (default: 60) durch — Guardrail gegen schlechte Matches
+4. **OrchestratorAgent** koordiniert die Kette und gibt ein vollständiges Run-Summary mit Agent-Log zurück
+
+### Rate Limiting
+- Groq: 30 req/min → 2,5s Pause zwischen LLM-Calls
+- Bei 429-Fehler: automatischer Fallback auf Gemini (wenn Key vorhanden)
+
+### Auto-Modus
+`POST /orchestrator/run/auto` generiert Suchqueries per LLM aus dem System-Prompt (8 Queries, z.B. "AI Product Owner Stuttgart", "Head of AI Remote Deutschland"). Ohne Key/Prompt: Fallback auf Default-Queries.
+
+---
+
+## KI-System (Stand: 01.07.2026)
 
 ### Welche Modelle werden verwendet?
 
@@ -208,7 +277,7 @@ wirkt bei jedem Call automatisch mit. Beispiel:
 
 ---
 
-## Features (Stand: 10.04.2026)
+## Features (Stand: 01.07.2026)
 
 ### Fertig
 - [x] Dashboard mit KPI-Cards (live aus DB: aktive Bewerbungen, Im Gespräch, Ø Match-Score, Follow-ups)
@@ -226,10 +295,13 @@ wirkt bei jedem Call automatisch mit. Beispiel:
 - [x] ⚡-Button in Pipeline: Score direkt berechnen + Popup
 - [x] Einstellungen-Seite: CV-Editor + API-Key-Verwaltung
 - [x] SQLite (kein laufender DB-Server nötig)
+- [x] **A2A Pipeline** — Agent-to-Agent Orchestrierung: ScoutAgent → MatchAgent → FilterAgent
+- [x] **Suchprofile** — Multi-Persona-Jobsuche mit eigenem CV + System-Prompt je Profil
+- [x] **LLM Fallback** — automatischer Wechsel Groq → Gemini bei 429/5xx-Fehlern
 
 ### In Arbeit / Nächste Schritte (Priorität)
 - [ ] **Message Drafter**: CV + Stelle + System-Prompt → Anschreiben + LinkedIn-Nachricht (Groq) — `POST /draft/{job_id}`
-- [ ] **Nacht-Scheduler**: Windows Task Scheduler → DuckDuckGo-Suche → neue Jobs in DB → Auto-Score → autonomer Agentic Loop
+- [ ] **Nacht-Scheduler**: Windows Task Scheduler → A2A-Pipeline automatisch starten
 - [ ] Kontakte in Unternehmensansicht bearbeiten
 - [x] **Sicherheit: API Keys in `.env` auslagern** — `POST /match/config` schreibt Keys jetzt in `.env` statt `config.json`; `config.json` enthält nur noch `system_prompt`
 - [x] **Sicherheit: Git-History prüfen** — `git log --all -- db/config.json` bestätigt: nie committed
@@ -248,14 +320,15 @@ wirkt bei jedem Call automatisch mit. Beispiel:
 
 ---
 
-## Datenschutz & Sicherheit (Stand: 28.04.2026)
+## Datenschutz & Sicherheit (Stand: 01.07.2026)
 
 ### Datenspeicherung
 | Datei | Inhalt | Schutz |
 |---|---|---|
 | `db/jobagent.db` | Bewerbungen, Jobs, Kontakte, Aktivitäten | Unverschlüsselt (SQLite) |
 | `db/cv.md` | Vollständiger Lebenslauf | Unverschlüsselt (Klartext) |
-| `db/config.json` | API Keys (Groq/Gemini), System-Prompt mit Name + Gehalt | Unverschlüsselt (Klartext) |
+| `.env` | API Keys (Groq/Gemini) | In `.gitignore`, nie committed |
+| `db/config.json` | System-Prompt (keine API Keys) | In `.gitignore`, nie committed |
 
 ### Externe Datenflüsse
 | Ziel | Was wird gesendet | Anmerkung |
@@ -272,8 +345,8 @@ wirkt bei jedem Call automatisch mit. Beispiel:
 - **ISO 27001:** Nicht anwendbar — Zertifizierungsstandard für Organisationen, nicht für Einzeltools
 
 ### Offene Punkte (→ TODO)
-- [ ] API Keys in `.env` statt `config.json` (Klartext-Risiko)
-- [ ] Git-History prüfen: `git log --all -- db/config.json`
+- [x] API Keys in `.env` statt `config.json` — erledigt
+- [x] Git-History geprüft: `config.json` nie committed
 - [ ] Contacts-Löschfunktion für Drittdaten
 - [ ] Bei Produktisierung: AVV mit Groq/Gemini, `.env`-Verschlüsselung, Login-Schutz
 
@@ -285,6 +358,7 @@ wirkt bei jedem Call automatisch mit. Beispiel:
 |---|---|---|
 | Automatische Job-Suche teilweise geblockt | Stepstone/Indeed blocken Bots | DuckDuckGo-Suche + langsame Requests |
 | Gemini 429-Fehler | Billing nicht aktiviert im Google-Account | Groq als primären Provider nutzen |
+| Groq 429 bei vielen Jobs | 30 req/min Limit | 2,5s Pause + automatischer Gemini-Fallback |
 | Port 8000 manchmal belegt | Windows TIME_WAIT nach mehrfachem Neustart | Port 8002 verwenden |
 
 ---

@@ -27,28 +27,46 @@ Full-stack AI-powered Bewerbungsmanager. Finds jobs, researches companies, score
 backend/app/
 ├── main.py           ← FastAPI app, CORS, router registration
 ├── database.py       ← SQLAlchemy engine (SQLite)
-├── models/models.py  ← ORM: Company, Job, Contact, Application, Activity
+├── models/models.py  ← ORM: Company, Job, Contact, Application, Activity, SearchProfile
+├── agents/
+│   └── pipeline.py   ← A2A: ScoutAgent → MatchAgent → FilterAgent → OrchestratorAgent
 └── routers/
     ├── applications.py  ← status pipeline management
     ├── annotations.py   ← in-app feedback system
-    ├── scout.py         ← job import from URL
+    ├── scout.py         ← job import + DuckDuckGo search
     ├── research.py      ← company scraping + Kununu + Google News
-    └── match.py         ← CV scoring via LLM (Groq/Gemini)
+    ├── match.py         ← CV scoring via LLM (Groq/Gemini, auto-fallback on 429)
+    ├── searches.py      ← saved search profiles (multi-persona)
+    └── orchestrator.py  ← A2A pipeline endpoints (/run, /run/auto)
 
 frontend/src/
 ├── App.tsx              ← layout, nav, routing
-├── api/applications.ts  ← fetch wrappers + types
+├── api/
+│   ├── applications.ts  ← fetch wrappers + types
+│   ├── scout.ts         ← scout + search profiles + orchestrator
+│   └── research.ts      ← company research
 └── components/
     ├── Dashboard.tsx        ← KPI cards + mini pipeline
     ├── Pipeline.tsx         ← full sortable pipeline table
+    ├── JobFinder.tsx        ← scout import + auto-search + scheduler + profiles
+    ├── AiAgents.tsx         ← AI status + system-prompt + ad-hoc scoring
     ├── Feedback.tsx         ← annotation review
     ├── MatchBadge.tsx       ← score traffic light
     └── AnnotationLayer.tsx  ← element-picker feedback tool
 ```
 
-**Data model:** companies → jobs → applications → activities (linear hierarchy). contacts hang off companies.
+**Data model:** companies → jobs → applications → activities (linear hierarchy). contacts hang off companies. search_profiles standalone.
 
 **Status pipeline:** `offen → kontaktiert → beworben → im_gespräch → interview → angebot → abgeschlossen / ghosted`
+
+### A2A Pipeline (new)
+Sequential multi-agent orchestration in `agents/pipeline.py`:
+- **ScoutAgent**: DuckDuckGo → URL filter → meta extraction → DB import
+- **MatchAgent**: CV + job → LLM scoring (2.5s delay, Groq→Gemini fallback on 429)
+- **FilterAgent**: Guardrail — only jobs above score threshold pass
+- **OrchestratorAgent**: coordinates the chain, returns full run summary + log
+
+Endpoints: `POST /orchestrator/run` (explicit queries) and `POST /orchestrator/run/auto` (LLM-generated queries)
 
 ---
 
@@ -61,8 +79,9 @@ Every LLM call structure:
 + <job_description>...</job_description>  ← XML-tagged (injection protection)
 ```
 
-**Providers:** Groq (primary, llama-3.3-70b-versatile, 14.400 req/day, 30/min) → Gemini fallback
+**Providers:** Groq (primary, llama-3.3-70b-versatile, 14.400 req/day, 30/min) → Gemini fallback (auto on 429/5xx)
 **Keys:** `.env` file (GROQ_API_KEY, GEMINI_API_KEY) — never in git
+**Rate limiting:** 2.5s delay between LLM calls in A2A pipeline
 
 ---
 
@@ -71,15 +90,22 @@ Every LLM call structure:
 - [x] API keys migrated to `.env` — `POST /match/config` writes to `.env` + `os.environ` (no restart needed); `config.json` holds `system_prompt` only
 - [x] Git history verified: `db/config.json` never committed
 - [ ] Suspicious-pattern logging in LLM inputs (`ignore`, `system prompt`, `vergiss`)
-- [ ] Output validation: match score must be Integer 0–100
+- [x] Output validation: match score must be Integer 0–100 (enforced in `_parse_score_response`)
 - [ ] Contacts delete function (GDPR — HR contact data scraped without consent)
 
 ---
 
+## Done (this session)
+
+- [x] **A2A Pipeline** — ScoutAgent → MatchAgent → FilterAgent → OrchestratorAgent
+- [x] **LLM Fallback** — Groq → Gemini auto-switch on 429/5xx
+- [x] **FilterAgent bugfix** — errored jobs no longer counted as rejected
+- [x] **Rate limiting fix** — 0.3s → 2.5s delay (was causing 429 cascades)
+
 ## Next Features (priority order)
 
 1. **Message Drafter** — `POST /draft/{job_id}` — CV + job + system-prompt → Anschreiben + LinkedIn message via Groq
-2. **Night Scheduler** — Windows Task Scheduler → DuckDuckGo search → new jobs → auto-score → agentic loop
+2. **Night Scheduler** — Windows Task Scheduler → A2A-Pipeline (`/orchestrator/run/auto`) on schedule
 3. **Follow-up Reminder** — overdue follow-ups flagged in Dashboard
 4. **Automated smoke tests** — at minimum: test that all FastAPI routes return 200 with fixture data (pytest)
 
@@ -91,8 +117,8 @@ Every LLM call structure:
 |---|---|---|
 | Job search partially blocked | Stepstone/Indeed bot detection | DuckDuckGo + slow requests |
 | Gemini 429 | Billing not enabled | Groq as primary |
+| Groq 429 on batch scoring | 30 req/min | 2.5s delay + auto Gemini fallback |
 | Port 8000 blocked | Windows TIME_WAIT | Use port 8002 |
-| Groq rate limit | 30 req/min | Throttle LLM calls in pipeline |
 
 ---
 

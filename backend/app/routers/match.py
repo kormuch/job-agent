@@ -116,11 +116,18 @@ async def _call_gemini(prompt: str, api_key: str) -> str:
 
 
 async def _call_llm(prompt: str) -> str:
-    """Ruft Groq (bevorzugt) oder Gemini auf."""
+    """Ruft Groq (bevorzugt) oder Gemini auf. Fallback bei 429/5xx."""
     groq_key = _get_groq_key()
-    if groq_key:
-        return await _call_groq(prompt, groq_key)
     gemini_key = _get_gemini_key()
+
+    if groq_key:
+        try:
+            return await _call_groq(prompt, groq_key)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (429, 500, 502, 503) and gemini_key:
+                return await _call_gemini(prompt, gemini_key)
+            raise
+
     if gemini_key:
         return await _call_gemini(prompt, gemini_key)
     raise ValueError("Kein API Key (Groq oder Gemini) hinterlegt.")
